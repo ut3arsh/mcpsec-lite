@@ -1,0 +1,18 @@
+# mcpsec-lite proxy configuration (minimal v1)
+
+server:
+  name: "filesystem"
+  command: "npx"
+  args: ["-y", "@modelcontextprotocol/server-filesystem", "."]
+
+redaction:
+  log_args: "redacted" # full | redacted | hash_only
+  patterns:
+    - "AKIA[0-9A-Z]{16}"
+    - "ghp_[A-Za-z0-9]{36}"
+  never_log_fields:
+    - "password"
+    - "token"
+    - "authorization"
+    - "secret"
+    - "api_key"
