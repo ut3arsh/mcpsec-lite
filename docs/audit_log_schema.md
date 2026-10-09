@@ -47,7 +47,7 @@ Every line carries `schema_version` and `event_type`. Consumers must ignore unkn
 | `rule_id` | string \| null | Flow rule `id` when `decision_layer` is `flow`. |
 | `taint_before` | list[string] | Session labels before this call. |
 | `taint_after` | list[string] | Labels after response processing. |
-| `pin_status` | enum | `pinned` \| `unpinned` \| `changed` |
+| `pin_status` | enum | `pinned` \| `unpinned` \| `changed` \| `unchecked` (emitted while pinning is unimplemented). |
 | `flags` | list[string] | Detector output, e.g. `secret_in_args:aws_key`, `injection_marker`. |
 | `risk_score` | number \| null | 0.0–1.0 from detectors; `null` if detectors off. Informational only. |
 | `response_summary` | object \| null | `{status: ok|error, bytes: int, content_type?: string}`. Never raw content. |

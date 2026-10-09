@@ -81,9 +81,15 @@ policies:
 - `{}` means allowed with no argument constraints.
 
 ### 3.1 Argument matching rules
-- **Paths:** the argument is normalized (expand `~`, resolve `..`, resolve symlinks) **before** matching against globs. Match failure ⇒ deny. Globs: `*` (no `/`), `**` (any depth).
-- **Domains:** parsed from the URL host, lowercased. `example.com` matches exactly; `*.example.com` matches subdomains only (not the apex). Non-HTTP(S) schemes are denied when a `domain_allowlist` is set. Redirects are not followed by the proxy; servers that follow redirects are a documented gap.
-- Constraints apply to a fixed, per-tool set of argument names declared in the tool adapter (e.g., `fs.read_file` → `path`; `http.fetch` → `url`). A tool with a constraint but no known argument mapping is a **validation error**.
+- **Paths:** the argument is normalized (expand `~`, resolve `..`, resolve symlinks, junctions, and parent directories for non-existent write targets) **before** matching against globs. Match failure ⇒ deny. Globs: `*` (no `/`), `**` (any depth).
+- **Unicode & URL encoding:** Path arguments MUST undergo Unicode NFC normalization before canonicalization. Implementations MUST NOT URL-decode file path arguments before evaluating allowlists.
+- **Windows boundaries:** On Windows, implementations MUST reject UNC paths (`\\\\server\\share`), Win32 device namespace paths (`\\\\?\\`, `\\\\.\\`), Alternate Data Streams (`:`), and legacy DOS reserved device names (`CON`, `PRN`, `AUX`, `NUL`, `COM1-9`, `LPT1-9`).
+- **Domains:** parsed from the URL host, lowercased. `example.com` matches exactly; `*.example.com` matches subdomains only (not the apex or look-alike domains). Non-HTTP(S) schemes and URLs with userinfo (`@`) are denied. Redirects are not followed by the proxy; servers that follow redirects are a documented gap.
+- **Strict schema mapping:** Constraints apply to a fixed, per-tool set of argument names declared in the tool adapter (e.g., `fs.read_file` → `path`; `http.fetch` → `url`). A tool with a constraint but no known argument mapping is a **validation error**. When evaluating tool calls for constrained tools, any argument not declared in the tool adapter schema is denied with `ERR_UNEXPECTED_ARGUMENT`.
+
+### 3.2 Agent responses & information leak prevention
+- In `mode: enforce`, agent-facing denial error responses MUST return a generic message (`"Denied by mcpsec policy"`) and MUST NOT leak allowlists, filesystem paths, or internal policy details to potentially untrusted models.
+- Full forensic context (e.g. `path not in allowlist: ...`) is preserved and recorded exclusively in the audit log.
 
 ## 4. `taint_sources`
 
@@ -202,10 +208,11 @@ The loader rejects the policy (and the proxy exits non-zero) when:
 5. Two `flow_rules` share an `id`.
 6. A rule has neither or both of `deny_capabilities` / `require_approval_capabilities`.
 7. A tool in `policies` has no `capabilities` entry.
-8. A constraint is set on a tool with no argument mapping.
+8. A constraint is set on a tool with no argument mapping, or an unexpected argument is passed to a constrained tool (`ERR_UNEXPECTED_ARGUMENT`).
 9. A glob or regex fails to compile.
+10. In `mode: enforce`, unenforced policy features (`flow_rules`, `taint_sources`, or `pinning.mode: strict`) are configured (`ERR_NOT_YET_ENFORCED`).
 
-Warnings (proxy starts, logs at startup): a `taint_source` label is never referenced by any flow rule; a capability tag is never referenced by any flow rule; `serialize_calls: false`.
+Warnings (proxy starts, logs at startup): a `taint_source` label is never referenced by any flow rule; a capability tag is never referenced by any flow rule; `serialize_calls: false`; unenforced features configured in `mode: audit`.
 
 ## 11. Complete minimal example
 

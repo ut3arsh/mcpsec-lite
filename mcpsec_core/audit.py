@@ -270,7 +270,7 @@ class AuditLogger:
         rule_id: str | None = None,
         taint_before: list[str] | None = None,
         taint_after: list[str] | None = None,
-        pin_status: Literal["pinned", "unpinned", "changed"] = "pinned",
+        pin_status: Literal["pinned", "unpinned", "changed", "unchecked"] = "unchecked",
         flags: list[str] | None = None,
         risk_score: float | None = None,
         response_summary: ResponseSummary | dict[str, Any] | None = None,

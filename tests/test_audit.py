@@ -153,3 +153,15 @@ def test_seq_monotonicity_and_recovery(tmp_path: Path) -> None:
         policy_hash="dummy",
     )
     assert ev6.seq == 6
+
+
+def test_pin_status_enum_matches_schema_doc() -> None:
+    from mcpsec_core.models import PinStatus
+
+    expected_statuses = {"pinned", "unpinned", "changed", "unchecked"}
+    actual_statuses = {s.value for s in PinStatus}
+    assert actual_statuses == expected_statuses
+
+    schema_doc = Path("docs/audit_log_schema.md").read_text(encoding="utf-8")
+    for status in expected_statuses:
+        assert f"`{status}`" in schema_doc or f'"{status}"' in schema_doc or status in schema_doc

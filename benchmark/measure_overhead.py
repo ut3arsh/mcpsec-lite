@@ -122,10 +122,10 @@ async def measure_benchmark(
                     tg.cancel_scope.cancel()
 
         # Parse audit log to get recorded proxy and upstream latencies
-        from cli.replay import load_audit_events
+        from cli.replay import stream_audit_events
         from mcpsec_core.models import ToolCallEvent
 
-        events = load_audit_events(audit_log)
+        events = [ev for ev, _ in stream_audit_events(audit_log)]
         tool_events = [e for e in events if isinstance(e, ToolCallEvent)]
         # Exclude the 5 warmup calls
         measured_events = tool_events[5:]

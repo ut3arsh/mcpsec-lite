@@ -39,6 +39,7 @@ class PinStatus(StrEnum):
     PINNED = "pinned"
     UNPINNED = "unpinned"
     CHANGED = "changed"
+    UNCHECKED = "unchecked"
 
 
 @dataclass
@@ -173,7 +174,7 @@ class ToolCallEvent(BaseAuditEvent):
     rule_id: str | None = None
     taint_before: list[str] = Field(default_factory=list)
     taint_after: list[str] = Field(default_factory=list)
-    pin_status: Literal["pinned", "unpinned", "changed"] = "pinned"
+    pin_status: Literal["pinned", "unpinned", "changed", "unchecked"] = "unchecked"
     flags: list[str] = Field(default_factory=list)
     risk_score: float | None = None
     response_summary: ResponseSummary | None = None

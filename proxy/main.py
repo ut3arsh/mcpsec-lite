@@ -1,9 +1,8 @@
-"""Main entrypoint for mcpsec-lite proxy service."""
+"""Main entrypoint for mcpsec-lite multi-upstream proxy service."""
 
 from __future__ import annotations
 
 import argparse
-import hashlib
 import sys
 import uuid
 from pathlib import Path
@@ -12,40 +11,70 @@ from typing import Any, Literal
 import anyio
 import mcp.types as types
 import yaml
-from mcp.client.session import ClientSession
-from mcp.client.stdio import StdioServerParameters, stdio_client
 from mcp.server.lowlevel import Server
 from mcp.server.stdio import stdio_server
 
 from mcpsec_core.audit import AuditLogger
+from mcpsec_core.models import LatencyMs
+from mcpsec_core.policy import Policy, PolicyError, load_policy
 from proxy.session import ProxySession
+from proxy.supervisor import UpstreamConfig, UpstreamManager
 
 
-def load_config(config_path: Path) -> dict[str, Any]:
-    """Load proxy configuration from a YAML file."""
+def load_raw_config(config_path: Path) -> dict[str, Any]:
+    """Load raw proxy YAML configuration for server parameters."""
     if not config_path.exists():
-        return {
-            "server": {
-                "name": "filesystem",
-                "command": "python",
-                "args": ["-m", "tests.test_server"],
-            },
-            "redaction": {
-                "log_args": "redacted",
-            },
-        }
-
+        return {}
     with open(config_path, encoding="utf-8") as f:
         data = yaml.safe_load(f)
         return data if isinstance(data, dict) else {}
 
 
-def compute_file_hash(path: Path) -> str:
-    """Compute SHA-256 hash of a file's raw contents."""
-    if not path.exists():
-        return hashlib.sha256(b"").hexdigest()
-    with open(path, "rb") as f:
-        return hashlib.sha256(f.read()).hexdigest()
+def parse_upstream_configs(raw_config: dict[str, Any]) -> list[UpstreamConfig]:
+    """Parse list of UpstreamConfig objects from raw proxy configuration."""
+    configs: list[UpstreamConfig] = []
+
+    # 1. Multi-upstream list under 'servers'
+    if "servers" in raw_config and isinstance(raw_config["servers"], list):
+        for s in raw_config["servers"]:
+            if isinstance(s, dict):
+                configs.append(
+                    UpstreamConfig(
+                        name=s.get("name", "upstream"),
+                        command=s.get("command", "python"),
+                        args=s.get("args", []),
+                        env=s.get("env", {}),
+                        cwd=s.get("cwd"),
+                        required=s.get("required", False),
+                    )
+                )
+
+    # 2. Legacy single-upstream format under 'server'
+    elif "server" in raw_config and isinstance(raw_config["server"], dict):
+        s = raw_config["server"]
+        configs.append(
+            UpstreamConfig(
+                name=s.get("name", "filesystem"),
+                command=s.get("command", "python"),
+                args=s.get("args", ["-m", "tests.test_server"]),
+                env=s.get("env", {}),
+                cwd=s.get("cwd"),
+                required=s.get("required", True),
+            )
+        )
+
+    # 3. Default fallback if no servers specified
+    if not configs:
+        configs.append(
+            UpstreamConfig(
+                name="filesystem",
+                command="python",
+                args=["-m", "tests.test_server"],
+                required=True,
+            )
+        )
+
+    return configs
 
 
 async def run_proxy(
@@ -56,17 +85,38 @@ async def run_proxy(
     tamper_evident: bool = False,
     fsync: bool = False,
 ) -> None:
-    """Run the MCP proxy connecting agent on stdio to upstream server."""
-    config = load_config(config_path)
-    policy_hash = compute_file_hash(config_path)
+    """Run the MCP proxy connecting agent on stdio to multiple upstream servers."""
+    policy: Policy | None = None
+    policy_hash: str = ""
+    warnings: list[str] = []
+
+    if config_path.exists():
+        try:
+            policy, policy_hash, warnings = load_policy(config_path, check_unenforced_guards=True)
+            mode = policy.mode
+        except PolicyError as err:
+            print(f"Error loading policy from {config_path}: {err}", file=sys.stderr)
+            for e in err.errors:
+                print(
+                    f"  [{e.get('code', 'ERR')}] {e.get('path', '')}: {e.get('message', '')}",
+                    file=sys.stderr,
+                )
+            sys.exit(1)
+    else:
+        warnings.append(f"Config file {config_path} not found; running with default allow-all")
+
+    raw_config = load_raw_config(config_path)
 
     # Configure redaction & audit logger
-    redaction_cfg = config.get("redaction", {})
-    log_args_mode: Literal["full", "redacted", "hash_only"] = redaction_cfg.get(
-        "log_args", "redacted"
-    )
-    patterns = redaction_cfg.get("patterns")
-    never_log_fields = redaction_cfg.get("never_log_fields")
+    redaction_cfg = raw_config.get("redaction", {})
+    if policy is not None:
+        log_args_mode: Literal["full", "redacted", "hash_only"] = policy.redaction.log_args
+        patterns = list(policy.redaction.patterns) or None
+        never_log_fields = list(policy.redaction.never_log_fields) or None
+    else:
+        log_args_mode = redaction_cfg.get("log_args", "redacted")
+        patterns = redaction_cfg.get("patterns")
+        never_log_fields = redaction_cfg.get("never_log_fields")
 
     audit_logger = AuditLogger(
         log_path=audit_log_path,
@@ -77,96 +127,125 @@ async def run_proxy(
         fsync=fsync,
     )
 
-    # 1. Log policy_loaded event
-    warnings: list[str] = []
-    if not config_path.exists():
-        warnings.append(f"Config file {config_path} not found; using defaults")
-    audit_logger.log_policy_loaded(
-        policy_path=str(config_path),
-        policy_hash=policy_hash,
-        warnings=warnings,
-    )
+    # 1. Parse and initialize UpstreamManager
+    upstream_configs = parse_upstream_configs(raw_config)
+    upstream_manager = UpstreamManager(upstream_configs)
 
-    # 2. Extract upstream server parameters
-    server_cfg = config.get("server", {})
-    server_name = server_cfg.get("name", "filesystem")
-    command = server_cfg.get("command", "python")
-    args = server_cfg.get("args", [])
-    env = server_cfg.get("env")
-    cwd = server_cfg.get("cwd")
-
-    upstream_params = StdioServerParameters(
-        command=command,
-        args=args,
-        env=env,
-        cwd=cwd,
-    )
-
-    session_id = str(uuid.uuid4())
-
-    # 3. Connect to upstream and serve agent on stdio
-    async with stdio_client(upstream_params) as (upstream_read, upstream_write):
-        async with ClientSession(upstream_read, upstream_write) as upstream_session:
-            await upstream_session.initialize()
-
-            proxy_session = ProxySession(
-                session_id=session_id,
-                upstream_session=upstream_session,
-                audit_logger=audit_logger,
-                server_name=server_name,
+    async with anyio.create_task_group() as tg:
+        # 2. Start upstream servers and capture startup warnings
+        try:
+            startup_warnings = await upstream_manager.start_all(tg)
+            warnings.extend(startup_warnings)
+        except Exception as exc:
+            print(f"Proxy startup failed: {exc}", file=sys.stderr)
+            audit_logger.log_policy_loaded(
+                policy_path=str(config_path),
                 policy_hash=policy_hash,
+                warnings=[f"Proxy failed to start: {exc}"],
+            )
+            sys.exit(1)
+
+        # 3. Log policy_loaded event
+        audit_logger.log_policy_loaded(
+            policy_path=str(config_path),
+            policy_hash=policy_hash,
+            warnings=warnings,
+        )
+
+        session_id = str(uuid.uuid4())
+        proxy_session = ProxySession(
+            session_id=session_id,
+            upstream_manager=upstream_manager,
+            audit_logger=audit_logger,
+            policy_hash=policy_hash,
+            agent_id=agent_id,
+            mode=mode,
+            policy_data=policy,
+        )
+
+        proxy_session.start()
+
+        # 4. Create agent-facing MCP server (advertising only tools)
+        server = Server("mcpsec-proxy")
+
+        async def handle_list_tools(
+            req_ctx: Any,
+            params: types.PaginatedRequestParams,
+        ) -> types.ListToolsResult:
+            return await proxy_session.list_tools()
+
+        async def handle_call_tool(
+            req_ctx: Any,
+            params: types.CallToolRequestParams,
+        ) -> types.CallToolResult:
+            return await proxy_session.call_tool(
+                name=params.name,
+                arguments=params.arguments,
+            )
+
+        async def handle_unsupported_surface(req_ctx: Any, params: Any) -> Any:
+            # Reject unsupported MCP surfaces (sampling, elicitation, roots, prompts, resources)
+            call_id = str(uuid.uuid4())
+            audit_logger.log_tool_call(
+                session_id=session_id,
+                call_id=call_id,
                 agent_id=agent_id,
-                mode=mode,
-                policy_data=config,
+                server="proxy",
+                tool="unsupported_surface",
+                capabilities=[],
+                raw_args={},
+                decision="deny",
+                effective_decision="blocked",
+                decision_layer="policy",
+                decision_reason="ERR_UNSUPPORTED_SURFACE: MCP surface beyond tools is not supported in v1",
+                pin_status="unchecked",
+                latency_ms=LatencyMs(proxy=0.1, upstream=None),
+                taint_before=sorted(proxy_session.session_state.taint),
+                taint_after=sorted(proxy_session.session_state.taint),
+                response_summary=None,
+                error="ERR_UNSUPPORTED_SURFACE",
+            )
+            raise ValueError(
+                "ERR_UNSUPPORTED_SURFACE: Surface beyond tools is rejected by mcpsec policy"
             )
 
-            proxy_session.start()
+        server.add_request_handler("tools/list", types.PaginatedRequestParams, handle_list_tools)
+        server.add_request_handler("tools/call", types.CallToolRequestParams, handle_call_tool)
 
-            # Create agent-facing MCP server
-            server = Server("mcpsec-proxy")
+        for surface_method in [
+            "resources/list",
+            "resources/read",
+            "prompts/list",
+            "prompts/get",
+            "sampling/createMessage",
+            "roots/list",
+        ]:
+            server.add_request_handler(surface_method, types.RequestParams, handle_unsupported_surface)
 
-            async def handle_list_tools(
-                req_ctx: Any,
-                params: types.PaginatedRequestParams,
-            ) -> types.ListToolsResult:
-                return await proxy_session.list_tools()
-
-            async def handle_call_tool(
-                req_ctx: Any,
-                params: types.CallToolRequestParams,
-            ) -> types.CallToolResult:
-                return await proxy_session.call_tool(
-                    name=params.name,
-                    arguments=params.arguments,
+        close_reason: Literal["disconnect", "shutdown", "error"] = "disconnect"
+        try:
+            async with stdio_server() as (server_read, server_write):
+                await server.run(
+                    server_read,
+                    server_write,
+                    server.create_initialization_options(),
                 )
-
-            server.add_request_handler(
-                "tools/list", types.PaginatedRequestParams, handle_list_tools
-            )
-            server.add_request_handler("tools/call", types.CallToolRequestParams, handle_call_tool)
-
-            close_reason: Literal["disconnect", "shutdown", "error"] = "disconnect"
-            try:
-                async with stdio_server() as (server_read, server_write):
-                    await server.run(
-                        server_read,
-                        server_write,
-                        server.create_initialization_options(),
-                    )
-            except Exception as exc:
-                if isinstance(exc, (KeyboardInterrupt, anyio.get_cancelled_exc_class())):
-                    close_reason = "shutdown"
-                else:
-                    close_reason = "error"
-                raise
-            finally:
-                proxy_session.close(reason=close_reason)
+        except Exception as exc:
+            if isinstance(exc, (KeyboardInterrupt, anyio.get_cancelled_exc_class())):
+                close_reason = "shutdown"
+            else:
+                close_reason = "error"
+            raise
+        finally:
+            proxy_session.close(reason=close_reason)
+            await upstream_manager.shutdown_all()
+            tg.cancel_scope.cancel()
 
 
 def main() -> None:
     """CLI entrypoint for mcpsec-proxy."""
     parser = argparse.ArgumentParser(
-        description="mcpsec-proxy - Deterministic security & audit proxy for MCP tool calls."
+        description="mcpsec-proxy - Deterministic multi-upstream security & audit proxy for MCP."
     )
     parser.add_argument(
         "--config",

@@ -1,0 +1,33 @@
+[
+  {
+    "name": "fetch",
+    "description": "Fetches a URL from the internet and extracts its contents as markdown.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "description": "URL to fetch"
+        },
+        "max_length": {
+          "type": "integer",
+          "description": "Maximum number of characters to return",
+          "default": 5000
+        },
+        "start_index": {
+          "type": "integer",
+          "description": "Start content extraction from this character index",
+          "default": 0
+        },
+        "raw": {
+          "type": "boolean",
+          "description": "Get raw HTML content without markdown conversion",
+          "default": false
+        }
+      },
+      "required": [
+        "url"
+      ]
+    }
+  }
+]

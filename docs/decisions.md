@@ -71,3 +71,21 @@ Format: **Status · Context · Decision · Consequences.**
 **Context:** Aiming for wide adoption and possible corporate use; explicit patent grant reduces adoption friction for security tooling.
 **Decision:** Apache-2.0 for all code and docs in this repository.
 **Consequences:** Permissive; compatible with a future open-core model. If a company later builds on it, no relicensing is needed for the core.
+
+## ADR-012 — Pre-compiled O(1) Policy Lookup & Immutable Policy Models
+**Status:** Accepted · 2026-10-10
+**Context:** Policy evaluation must satisfy strict performance budgets (<1 ms) without list traversals, regex recompilation, or mutable state risks.
+**Decision:** Validate and compile policy at load time into frozen Pydantic models and index dictionaries (`agent_id -> tool_id -> CompiledToolRule`). `check_policy` executes pure O(1) dictionary lookups and pre-compiled regex matching.
+**Consequences:** Fast, deterministic policy evaluations (<0.1 ms in-memory); eliminates re-parsing overhead and ensures thread safety.
+
+## ADR-013 — Fail-Closed Generic Error Responses to Agents
+**Status:** Accepted · 2026-10-10
+**Context:** Returning granular denial reasons (e.g. allowlisted directory roots or active policy rules) leaks internal infrastructure and security boundaries to potentially compromised agents.
+**Decision:** Enforce-mode policy denials return a fixed generic message `"Denied by mcpsec policy"`. Detailed decision reasons, matched capabilities, and path context are written exclusively to the audit log.
+**Consequences:** Prevents prompt injection reconnaissance; full forensic audit trails are maintained without leaking information to untrusted models.
+
+## ADR-014 — Canonical Path Resolution with Cross-Platform Security Filtering
+**Status:** Accepted · 2026-10-10
+**Context:** Path allowlists can be bypassed via relative traversal (`..`), symlink/junction escapes, Windows Alternate Data Streams, Win32 device namespaces, or legacy device names.
+**Decision:** Enforce Unicode NFC normalization, resolve real paths against filesystem roots, resolve parent directories for non-existent write targets, and reject UNC, device namespaces (`\\?\`, `\\.\`), ADS (`:`), and DOS reserved device names on Windows.
+**Consequences:** Robust protection against path traversal escapes on both Linux and Windows.

@@ -26,7 +26,8 @@ def test_policy_stub() -> None:
     )
     decision = check_policy(call, None)
     assert decision.is_allowed
-    assert decision.layer == "policy"
+    assert decision.layer == "none"
+    assert decision.reason == "pass-through (no policy)"
 
 
 def test_flow_stub() -> None:

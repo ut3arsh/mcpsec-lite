@@ -1,15 +1,29 @@
-# mcpsec-lite proxy configuration (minimal v1)
+# mcpsec-lite multi-upstream proxy configuration (v1)
 
-server:
-  name: "filesystem"
-  command: "npx"
-  args: ["-y", "@modelcontextprotocol/server-filesystem", "."]
+servers:
+  - name: fs
+    command: python
+    args: ["-m", "tests.test_server"]
+    env: {}
+    cwd: null
+    required: true
+  - name: fetch
+    command: python
+    args: ["-m", "tests.fakes.fake_fetch"]
+    required: false
+  - name: github
+    command: python
+    args: ["-m", "tests.fakes.fake_github"]
+    env:
+      GITHUB_READ_ONLY: "true"
+    required: false
 
 redaction:
   log_args: "redacted" # full | redacted | hash_only
   patterns:
     - "AKIA[0-9A-Z]{16}"
     - "ghp_[A-Za-z0-9]{36}"
+    - "github_pat_[A-Za-z0-9_]{82}"
   never_log_fields:
     - "password"
     - "token"

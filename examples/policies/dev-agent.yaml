@@ -1,0 +1,109 @@
+version: 1
+mode: audit
+serialize_calls: true
+
+capabilities:
+  # Filesystem tools
+  fs.read_file: [read]
+  fs.read_text_file: [read]
+  fs.read_media_file: [read]
+  fs.read_multiple_files: [read]
+  fs.write_file: [write]
+  fs.edit_file: [write]
+  fs.create_directory: [write]
+  fs.list_directory: [read]
+  fs.list_directory_with_sizes: [read]
+  fs.directory_tree: [read]
+  fs.move_file: [write]
+  fs.search_files: [read]
+  fs.get_file_info: [read]
+  fs.list_allowed_directories: [read]
+  # Fetch tool
+  fetch.fetch: [network_read]
+  # GitHub read-only tools
+  github.get_issue: [network_read]
+  github.get_pull_request: [network_read]
+  github.get_file_contents: [network_read]
+  github.list_issues: [network_read]
+  github.list_pull_requests: [network_read]
+  github.search_repositories: [network_read]
+  github.search_code: [network_read]
+  github.search_issues: [network_read]
+
+policies:
+  - agent: "dev-agent"
+    tools:
+      fs.read_file:
+        path_allowlist: ["/home/user/project/**", "./sandbox/**", "C:/workspace/**"]
+      fs.read_text_file:
+        path_allowlist: ["/home/user/project/**", "./sandbox/**", "C:/workspace/**"]
+      fs.list_directory:
+        path_allowlist: ["/home/user/project/**", "./sandbox/**", "C:/workspace/**"]
+      fs.get_file_info:
+        path_allowlist: ["/home/user/project/**", "./sandbox/**", "C:/workspace/**"]
+      fs.write_file:
+        path_allowlist: ["/home/user/project/**", "./sandbox/**", "C:/workspace/**"]
+      fetch.fetch:
+        domain_allowlist: ["api.github.com", "raw.githubusercontent.com", "*.github.com", "httpbin.org"]
+      github.get_issue: {}
+      github.get_pull_request: {}
+      github.get_file_contents:
+        path_allowlist: ["src/**", "docs/**", "*.md"]
+      github.list_issues: {}
+      github.list_pull_requests: {}
+      github.search_repositories: {}
+
+  - agent: "*"
+    tools:
+      fs.read_file:
+        path_allowlist: ["./sandbox/**"]
+      fetch.fetch:
+        domain_allowlist: ["api.github.com"]
+      github.get_issue: {}
+
+taint_sources:
+  untrusted_content:
+    - tool: github.get_issue
+    - tool: github.get_pull_request
+    - tool: fetch.fetch
+  private_data:
+    - tool: fs.read_file
+      args:
+        path: ["**/.env", "~/.ssh/**", "**/*secret*"]
+
+flow_rules:
+  - id: no-egress-after-untrusted
+    if_session_has: [untrusted_content]
+    deny_capabilities: [egress, exec]
+  - id: no-egress-after-private
+    if_session_has: [private_data]
+    deny_capabilities: [egress]
+  - id: gate-write-when-both
+    if_session_has: [untrusted_content, private_data]
+    require_approval_capabilities: [write]
+
+approval:
+  channel: cli
+  pending_file: ./pending_approvals.jsonl
+  timeout_seconds: 300
+  allow_clear: [untrusted_content]
+
+pinning:
+  mode: audit
+  store: ./pins.json
+
+detectors:
+  secrets: true
+  injection_heuristics: true
+
+redaction:
+  log_args: redacted
+  patterns:
+    - "ghp_[A-Za-z0-9]{36}"
+    - "github_pat_[A-Za-z0-9_]{82}"
+    - "AKIA[0-9A-Z]{16}"
+  never_log_fields:
+    - "password"
+    - "token"
+    - "authorization"
+    - "secret"

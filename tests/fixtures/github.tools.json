@@ -1,0 +1,267 @@
+[
+  {
+    "name": "get_issue",
+    "description": "Get details of a specific issue in a GitHub repository.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "owner": {
+          "type": "string",
+          "description": "Repository owner (username or organization)"
+        },
+        "repo": {
+          "type": "string",
+          "description": "Repository name"
+        },
+        "issue_number": {
+          "type": "integer",
+          "description": "Issue number"
+        }
+      },
+      "required": [
+        "owner",
+        "repo",
+        "issue_number"
+      ]
+    }
+  },
+  {
+    "name": "get_pull_request",
+    "description": "Get details of a specific pull request in a GitHub repository.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "owner": {
+          "type": "string",
+          "description": "Repository owner (username or organization)"
+        },
+        "repo": {
+          "type": "string",
+          "description": "Repository name"
+        },
+        "pull_number": {
+          "type": "integer",
+          "description": "Pull request number"
+        }
+      },
+      "required": [
+        "owner",
+        "repo",
+        "pull_number"
+      ]
+    }
+  },
+  {
+    "name": "get_file_contents",
+    "description": "Get contents of a file from a GitHub repository.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "owner": {
+          "type": "string",
+          "description": "Repository owner"
+        },
+        "repo": {
+          "type": "string",
+          "description": "Repository name"
+        },
+        "path": {
+          "type": "string",
+          "description": "Path to the file in the repository"
+        },
+        "ref": {
+          "type": "string",
+          "description": "Git commit ref/branch/tag"
+        }
+      },
+      "required": [
+        "owner",
+        "repo",
+        "path"
+      ]
+    }
+  },
+  {
+    "name": "list_issues",
+    "description": "List issues in a GitHub repository with filters.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "owner": {
+          "type": "string",
+          "description": "Repository owner"
+        },
+        "repo": {
+          "type": "string",
+          "description": "Repository name"
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "open",
+            "closed",
+            "all"
+          ]
+        },
+        "labels": {
+          "type": "string",
+          "description": "Comma-separated list of label names"
+        },
+        "sort": {
+          "type": "string",
+          "enum": [
+            "created",
+            "updated",
+            "comments"
+          ]
+        },
+        "direction": {
+          "type": "string",
+          "enum": [
+            "asc",
+            "desc"
+          ]
+        },
+        "since": {
+          "type": "string",
+          "description": "ISO 8601 timestamp"
+        },
+        "page": {
+          "type": "integer"
+        },
+        "per_page": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "owner",
+        "repo"
+      ]
+    }
+  },
+  {
+    "name": "list_pull_requests",
+    "description": "List pull requests in a GitHub repository.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "owner": {
+          "type": "string",
+          "description": "Repository owner"
+        },
+        "repo": {
+          "type": "string",
+          "description": "Repository name"
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "open",
+            "closed",
+            "all"
+          ]
+        },
+        "head": {
+          "type": "string"
+        },
+        "base": {
+          "type": "string"
+        },
+        "sort": {
+          "type": "string"
+        },
+        "direction": {
+          "type": "string"
+        },
+        "page": {
+          "type": "integer"
+        },
+        "per_page": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "owner",
+        "repo"
+      ]
+    }
+  },
+  {
+    "name": "search_repositories",
+    "description": "Search for GitHub repositories.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "Search query"
+        },
+        "page": {
+          "type": "integer"
+        },
+        "per_page": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "query"
+      ]
+    }
+  },
+  {
+    "name": "search_code",
+    "description": "Search code across GitHub repositories.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "q": {
+          "type": "string",
+          "description": "Search query"
+        },
+        "sort": {
+          "type": "string"
+        },
+        "order": {
+          "type": "string"
+        },
+        "per_page": {
+          "type": "integer"
+        },
+        "page": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "q"
+      ]
+    }
+  },
+  {
+    "name": "search_issues",
+    "description": "Search issues and pull requests in GitHub.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "q": {
+          "type": "string",
+          "description": "Search query"
+        },
+        "sort": {
+          "type": "string"
+        },
+        "order": {
+          "type": "string"
+        },
+        "per_page": {
+          "type": "integer"
+        },
+        "page": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "q"
+      ]
+    }
+  }
+]

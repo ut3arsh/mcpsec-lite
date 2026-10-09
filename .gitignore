@@ -24,3 +24,9 @@ pins.json
 .vscode/
 .idea/
 *.swp
+desktop.ini
+
+# Node
+node_modules/
+package-lock.json
+
