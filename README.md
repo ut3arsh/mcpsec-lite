@@ -108,6 +108,54 @@ docs/          specs and decisions
 - [`docs/decisions.md`](docs/decisions.md): architecture decision log
 - [`CHANGELOG.md`](CHANGELOG.md)
 
+## Development
+
+### Prerequisites
+- Python ≥ 3.11
+- `uv` (recommended) or `pip`
+
+### Installation
+```bash
+# Install dependencies and package in editable mode
+uv pip install -e ".[dev]"
+# Or via standard pip:
+python -m pip install -e ".[dev]"
+```
+
+### Running the Proxy
+```bash
+# Start proxy in front of upstream MCP server
+mcpsec-proxy --config proxy.yaml --audit-log audit.jsonl
+
+# Or via python module:
+python -m proxy.main --config proxy.yaml --audit-log audit.jsonl
+```
+
+### Replaying Audit Logs
+```bash
+# View human-readable session timeline
+mcpsec-replay --file audit.jsonl
+
+# Filter by session, tool, decision, or agent
+mcpsec-replay --file audit.jsonl --session 7c1d --tool read_file --decision allow
+```
+
+### Running Tests & Quality Checks
+```bash
+# Run pytest suite
+pytest -v
+
+# Run linter and type checker
+ruff check .
+mypy .
+```
+
+### Measuring Proxy Overhead
+```bash
+# Run benchmark measuring p50/p95 latency distributions
+python benchmark/measure_overhead.py
+```
+
 ## Security
 
 Report vulnerabilities in this project privately (contact and `SECURITY.md` to be added before the first release).

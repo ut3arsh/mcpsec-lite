@@ -32,6 +32,9 @@ dev = [
 mcpsec-proxy = "proxy.main:main"
 mcpsec-replay = "cli.replay:main"
 
+[tool.hatch.build.targets.wheel]
+packages = ["mcpsec_core", "proxy", "cli"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"

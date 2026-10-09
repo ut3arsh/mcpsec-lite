@@ -1,6 +1,6 @@
 # NOTES.md — Decisions, Ambiguities, Assumptions & Spec Notes
 
-This document tracks assumptions, ambiguities, and design decisions encountered during development, per project requirements.
+This document tracks assumptions, ambiguities, design decisions, and measurements encountered during development, per project requirements.
 
 ## Week 1: Proxy Skeleton & Audit Logging
 
@@ -23,3 +23,23 @@ This document tracks assumptions, ambiguities, and design decisions encountered 
 
 5. **`response_summary`**:
    - *Assumption*: The response content is never logged verbatim. `response_summary` records `{"status": "ok" | "error", "bytes": int}` where `bytes` is the UTF-8 byte length of all returned content items.
+
+6. **MCP SDK Integration (v2.3.0)**:
+   - Used official `mcp` Python SDK (`mcp.server.lowlevel.Server`, `mcp.client.session.ClientSession`, `mcp.server.stdio.stdio_server`, `mcp.client.stdio.stdio_client`).
+   - `mcpsec_core` remains pure and has zero dependencies on `mcp` SDK or transports.
+
+### Measured Proxy Latency Overhead
+Run via `python benchmark/measure_overhead.py` over 100 tool calls:
+- **Proxy Overhead (p50):** 0.041 ms
+- **Proxy Overhead (p95):** 0.072 ms
+- **Proxy Overhead (mean):** 0.046 ms
+- **Proxy Overhead (max):** 0.191 ms
+- **Target (< 10 ms):** PASSED (sub-millisecond overhead, ~0.04-0.07 ms)
+
+### Top 3 Risks for Week 2 (Policy Engine & Allowlists)
+1. **Path Normalization & Symlink Resolution across OSes**:
+   - Glob matching (`**`, `*`) against paths must safely normalize symlinks, relative segments (`..`), and home paths (`~`) without bypasses on Windows vs POSIX paths.
+2. **Strict Default-Deny & Tool-to-Argument Mapping**:
+   - Validation rules in `policy_schema.md` require fail-closed behavior when tool arguments do not match expected schemas or when unknown capabilities are encountered.
+3. **Domain Matching & URL Parsing**:
+   - Correctly handling apex domains vs subdomains (`*.github.com` vs `github.com`), non-standard URL schemes, and redirect blind spots without introducing false positives in benign runs.
