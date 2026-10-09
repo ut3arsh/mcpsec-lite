@@ -1,0 +1,26 @@
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environment
+.venv/
+env/
+venv/
+
+# Logs and outputs
+*.log
+audit.jsonl
+pending_approvals.jsonl
+pins.json
+
+# IDEs
+.vscode/
+.idea/
+*.swp

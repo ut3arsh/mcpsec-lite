@@ -60,7 +60,7 @@ def filter_events(
         # Filter by agent_id
         if agent_id is not None:
             ev_agent = getattr(event, "agent_id", None)
-            if ev_agent is not None and ev_agent != agent_id:
+            if ev_agent is None or ev_agent != agent_id:
                 continue
 
         # Criteria specific to ToolCallEvent
@@ -82,7 +82,7 @@ def filter_events(
                 if event.decision_layer.lower() != decision_layer.lower():
                     continue
         else:
-            # If filtering by tool or decision, skip non-tool events
+            # If filtering by tool, decision, or decision_layer, skip non-tool events
             if tool is not None or decision is not None or decision_layer is not None:
                 continue
 
