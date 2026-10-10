@@ -2,7 +2,7 @@
 
 **Deterministic runtime policy and session-level flow control for MCP tool calls, with an open benchmark.**
 
-![status](https://img.shields.io/badge/status-design%20phase-lightgrey) ![license](https://img.shields.io/badge/license-Apache--2.0-blue)
+![status](https://img.shields.io/badge/status-development-orange) [![CI](https://github.com/ut3arsh/ai-agent-firewall/actions/workflows/ci.yml/badge.svg)](https://github.com/ut3arsh/ai-agent-firewall/actions/workflows/ci.yml) ![license](https://img.shields.io/badge/license-Apache--2.0-blue)
 
 > **Status: design phase.** The specs are written; the code is not. Everything under "Quickstart" describes the *planned* interface. Nothing here has been benchmarked yet, and no results are claimed.
 

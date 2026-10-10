@@ -1,0 +1,9 @@
+{
+  "name": "ai-agent-firewall",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Deterministic firewall for AI agent MCP connections",
+  "dependencies": {
+    "@modelcontextprotocol/server-filesystem": "2026.8.31"
+  }
+}

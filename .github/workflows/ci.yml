@@ -13,7 +13,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-24.04, windows-2022]
         python-version: ["3.11", "3.12", "3.13"]
 
     steps:
@@ -33,7 +33,8 @@ jobs:
           cache: "npm"
 
       - name: Install Node Upstreams
-        run: npm ci || npm install
+        run: npm ci
+
 
       - name: Install Python Dependencies
         run: |
