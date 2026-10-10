@@ -14,7 +14,7 @@ from mcp.server.stdio import SessionMessage  # type: ignore[attr-defined]
 
 from mcpsec_core.audit import AuditLogger
 from mcpsec_core.models import parse_audit_event
-from mcpsec_core.policy import PolicyError, load_policy
+from mcpsec_core.policy import load_policy
 from proxy.session import ProxySession
 from proxy.supervisor import UpstreamConfig, UpstreamManager
 

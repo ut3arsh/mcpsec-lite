@@ -353,45 +353,47 @@ class ProxySession:
         effective_decision: Literal["forwarded", "blocked", "held"] = "forwarded"
         rule_id: str | None = None
 
-        # Check pinning mode
+        # Check pinning mode and status
+        pin_status: Literal["pinned", "unpinned", "changed", "unchecked"] = "unchecked"
+        diff_summary: str | None = None
+        current_hash: str = ""
         pinning_mode: Literal["audit", "strict"] = "audit"
+
         if (
             self.policy_data is not None
             and hasattr(self.policy_data, "pinning")
-            and self.policy_data.pinning
+            and self.policy_data.pinning is not None
         ):
             pinning_mode = getattr(self.policy_data.pinning, "mode", "audit")
 
-        # Find tool definition for pinning check
-        tool_dict: dict[str, Any] = {"name": upstream_tool_name}
-        for t in self.upstream_manager.list_all_tools():
-            if t.name == name:
-                in_schema = getattr(t, "input_schema", None) or getattr(t, "inputSchema", {})
-                out_schema = getattr(t, "output_schema", None) or getattr(t, "outputSchema", None)
-                tool_dict["description"] = getattr(t, "description", None)
-                tool_dict["inputSchema"] = in_schema
-                if getattr(t, "title", None) is not None:
-                    tool_dict["title"] = t.title
-                if out_schema is not None:
-                    tool_dict["outputSchema"] = out_schema
-                if getattr(t, "annotations", None) is not None:
-                    tool_dict["annotations"] = t.annotations
-                break
+            # Find tool definition for pinning check
+            tool_dict: dict[str, Any] = {"name": upstream_tool_name}
+            for t in self.upstream_manager.list_all_tools():
+                if t.name == name:
+                    in_schema = getattr(t, "input_schema", None) or getattr(t, "inputSchema", {})
+                    out_schema = getattr(t, "output_schema", None) or getattr(t, "outputSchema", None)
+                    tool_dict["description"] = getattr(t, "description", None)
+                    tool_dict["inputSchema"] = in_schema
+                    if getattr(t, "title", None) is not None:
+                        tool_dict["title"] = t.title
+                    if out_schema is not None:
+                        tool_dict["outputSchema"] = out_schema
+                    if getattr(t, "annotations", None) is not None:
+                        tool_dict["annotations"] = t.annotations
+                    break
 
-        pin_status, diff_summary, current_hash = self.pin_store.check_tool(
-            server=server_name,
-            tool_def=tool_dict,
-            mode=pinning_mode,
-        )
+            pin_status, diff_summary, current_hash = self.pin_store.check_tool(
+                server=server_name,
+                tool_def=tool_dict,
+                mode=pinning_mode,
+            )
 
         try:
             # 3.1 Pinning check in strict mode
-            if pinning_mode == "strict" and pin_status != "pinned":
+            if pinning_mode == "strict" and pin_status != "pinned" and self.policy_data is not None and getattr(self.policy_data, "pinning", None) is not None:
                 decision = "deny"
                 decision_layer = "pinning"
-                decision_reason = (
-                    f"Tool '{server_name}.{upstream_tool_name}' is {pin_status} under strict pinning"
-                )
+                decision_reason = f"Tool '{server_name}.{upstream_tool_name}' is {pin_status} under strict pinning"
             else:
                 # 3.2 Policy check
                 policy_decision = check_policy(tool_call, self.policy_data)

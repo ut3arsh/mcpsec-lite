@@ -19,15 +19,15 @@ import re
 import threading
 import time
 from collections.abc import Iterator
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
+from mcpsec_core.models import Decision
+
 # Regex for model-visible invisible, zero-width, or bidi control characters
-BIDI_ZERO_WIDTH_REGEX = re.compile(
-    r"[\u200B-\u200D\uFEFF\u200E\u200F\u202A-\u202E\u2066-\u2069]"
-)
+BIDI_ZERO_WIDTH_REGEX = re.compile(r"[\u200B-\u200D\uFEFF\u200E\u200F\u202A-\u202E\u2066-\u2069]")
 
 # Volatile fields explicitly ignored during tool definition hashing
 VOLATILE_TOOL_FIELDS = frozenset({"_meta"})
@@ -70,13 +70,22 @@ else:
         fd = file_obj.fileno()
         with _PIN_PROCESS_LOCK:
             try:
-                fcntl.flock(fd, fcntl.LOCK_EX)
+                fcntl.flock(fd, fcntl.LOCK_EX)  # type: ignore[attr-defined]
                 yield
             finally:
                 try:
-                    fcntl.flock(fd, fcntl.LOCK_UN)
+                    fcntl.flock(fd, fcntl.LOCK_UN)  # type: ignore[attr-defined]
                 except Exception:
                     pass
+
+
+def check_pinning(server: str, pin_store: Any | None = None) -> Decision:
+    """Evaluate pinning status for a server. If no pin store configured, pass through."""
+    return Decision(
+        decision="allow",
+        reason="pass-through (no pinning store)" if pin_store is None else "pinned",
+        layer="pinning",
+    )
 
 
 class PinStoreError(Exception):

@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import argparse
 import sys
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 from mcpsec_core.pinning import PinStore, compute_diff_summary
 
@@ -28,9 +28,13 @@ def format_pin_list(store: PinStore) -> str:
 
     for srv_name, srv_pin in sorted(store.servers.items()):
         if not srv_pin.tools:
-            lines.append(f"{srv_name:<16} {'(all tools)':<24} {srv_pin.server_hash[:12]:<16} {srv_pin.pinned_at}")
+            lines.append(
+                f"{srv_name:<16} {'(all tools)':<24} {srv_pin.server_hash[:12]:<16} {srv_pin.pinned_at}"
+            )
         for t_name, t_pin in sorted(srv_pin.tools.items()):
-            lines.append(f"{srv_name:<16} {t_name:<24} {t_pin.tool_hash[:12]:<16} {t_pin.pinned_at}")
+            lines.append(
+                f"{srv_name:<16} {t_name:<24} {t_pin.tool_hash[:12]:<16} {t_pin.pinned_at}"
+            )
 
     return "\n".join(lines) + "\n"
 
@@ -106,7 +110,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             sys.stdout.write(f"Pinned at: {pin.pinned_at}\n")
             sys.stdout.write(f"Summary: {diff_text}\n")
             if has_bidi:
-                sys.stdout.write("WARNING: Definition contains invisible/bidi control characters!\n")
+                sys.stdout.write(
+                    "WARNING: Definition contains invisible/bidi control characters!\n"
+                )
             return 0
         else:
             srv_pin = store.get_server_pin(target)
