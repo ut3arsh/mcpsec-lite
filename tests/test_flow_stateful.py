@@ -176,7 +176,7 @@ class SessionSecurityStateMachine(RuleBasedStateMachine):
     def clear_taint_approval(self, label: str) -> None:
         # According to policy, only untrusted_content is in allow_clear
         if STATEFUL_POLICY.approval and label in STATEFUL_POLICY.approval.allow_clear:
-            new_taint = set(t for t in self.session_state.taint if t != label)
+            new_taint = {t for t in self.session_state.taint if t != label}
             self.session_state = SessionState(
                 session_id=self.session_state.session_id,
                 taint=new_taint,

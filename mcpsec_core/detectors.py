@@ -25,9 +25,7 @@ PRIVATE_KEY_REGEX = re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----")
 HIGH_ENTROPY_BLOB_REGEX = re.compile(r"\b[A-Za-z0-9+/]{64,}={0,2}\b")
 
 # Response injection heuristics
-BIDI_ZERO_WIDTH_REGEX = re.compile(
-    r"[\u200B-\u200D\uFEFF\u200E\u200F\u202A-\u202E\u2066-\u2069]"
-)
+BIDI_ZERO_WIDTH_REGEX = re.compile(r"[\u200B-\u200D\uFEFF\u200E\u200F\u202A-\u202E\u2066-\u2069]")
 COARSE_INJECTION_REGEX = re.compile(
     r"(?i)(?:ignore\s+(?:all\s+)?previous\s+instructions|system\s+prompt\s*:|\[INST\]|<\|im_start\|>|SYSTEM:\s*|forget\s+all\s+prior\s+instructions)"
 )
