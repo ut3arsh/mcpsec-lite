@@ -371,7 +371,9 @@ class ProxySession:
             for t in self.upstream_manager.list_all_tools():
                 if t.name == name:
                     in_schema = getattr(t, "input_schema", None) or getattr(t, "inputSchema", {})
-                    out_schema = getattr(t, "output_schema", None) or getattr(t, "outputSchema", None)
+                    out_schema = getattr(t, "output_schema", None) or getattr(
+                        t, "outputSchema", None
+                    )
                     tool_dict["description"] = getattr(t, "description", None)
                     tool_dict["inputSchema"] = in_schema
                     if getattr(t, "title", None) is not None:
@@ -390,7 +392,12 @@ class ProxySession:
 
         try:
             # 3.1 Pinning check in strict mode
-            if pinning_mode == "strict" and pin_status != "pinned" and self.policy_data is not None and getattr(self.policy_data, "pinning", None) is not None:
+            if (
+                pinning_mode == "strict"
+                and pin_status != "pinned"
+                and self.policy_data is not None
+                and getattr(self.policy_data, "pinning", None) is not None
+            ):
                 decision = "deny"
                 decision_layer = "pinning"
                 decision_reason = f"Tool '{server_name}.{upstream_tool_name}' is {pin_status} under strict pinning"

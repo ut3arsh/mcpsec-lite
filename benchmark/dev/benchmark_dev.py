@@ -791,7 +791,9 @@ async def execute_scenario_through_proxy(
     mock_tools = [
         types.Tool(name="filesystem__read_file", description="Read file", input_schema={}),
         types.Tool(name="filesystem__write_file", description="Write file", input_schema={}),
-        types.Tool(name="filesystem__list_directory", description="List directory", input_schema={}),
+        types.Tool(
+            name="filesystem__list_directory", description="List directory", input_schema={}
+        ),
         types.Tool(name="fs__read_file", description="Read file", input_schema={}),
         types.Tool(name="fs__write_file", description="Write file", input_schema={}),
         types.Tool(name="fs__list_directory", description="List directory", input_schema={}),
