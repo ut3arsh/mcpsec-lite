@@ -247,16 +247,17 @@ def test_audit_logger_fsync_mode(tmp_path: Path) -> None:
 def test_audit_log_schema_enums_bidirectional_contract() -> None:
     """Assert every enum value emitted by code appears in docs/audit_log_schema.md and vice versa."""
     import typing
+
     from mcpsec_core.models import (
+        ApprovalEvent,
         DecisionLayer,
         EffectiveDecision,
         PinEvent,
         PinStatus,
-        ToolCallEvent,
         PolicyLoadedEvent,
-        SessionStartEvent,
         SessionEndEvent,
-        ApprovalEvent,
+        SessionStartEvent,
+        ToolCallEvent,
     )
 
     schema_doc_path = Path(__file__).parent.parent / "docs" / "audit_log_schema.md"
@@ -265,6 +266,7 @@ def test_audit_log_schema_enums_bidirectional_contract() -> None:
 
     def extract_cell_enums(section_header: str, field_name: str) -> set[str]:
         import re
+
         section = doc_text.split(section_header)[1].split("\n## ")[0]
         for line in section.splitlines():
             line_str = line.strip()
@@ -289,31 +291,48 @@ def test_audit_log_schema_enums_bidirectional_contract() -> None:
     }
     assert code_pin_actions == expected_pin_actions
     doc_pin_actions = extract_cell_enums("## 5. `pin_event`", "action")
-    assert code_pin_actions == doc_pin_actions, f"pin_event.action mismatch: code={code_pin_actions}, doc={doc_pin_actions}"
+    assert code_pin_actions == doc_pin_actions, (
+        f"pin_event.action mismatch: code={code_pin_actions}, doc={doc_pin_actions}"
+    )
 
     # 2. decision_layer
     code_decision_layers = {x.value for x in DecisionLayer}
     expected_decision_layers = {"pinning", "policy", "flow", "approval", "none"}
     assert code_decision_layers == expected_decision_layers
-    assert set(typing.get_args(ToolCallEvent.model_fields["decision_layer"].annotation)) == expected_decision_layers
+    assert (
+        set(typing.get_args(ToolCallEvent.model_fields["decision_layer"].annotation))
+        == expected_decision_layers
+    )
     doc_decision_layers = extract_cell_enums("## 3. `tool_call`", "decision_layer")
-    assert code_decision_layers == doc_decision_layers, f"decision_layer mismatch: code={code_decision_layers}, doc={doc_decision_layers}"
+    assert code_decision_layers == doc_decision_layers, (
+        f"decision_layer mismatch: code={code_decision_layers}, doc={doc_decision_layers}"
+    )
 
     # 3. effective_decision
     code_eff_decisions = {x.value for x in EffectiveDecision}
     expected_eff_decisions = {"forwarded", "blocked", "held"}
     assert code_eff_decisions == expected_eff_decisions
-    assert set(typing.get_args(ToolCallEvent.model_fields["effective_decision"].annotation)) == expected_eff_decisions
+    assert (
+        set(typing.get_args(ToolCallEvent.model_fields["effective_decision"].annotation))
+        == expected_eff_decisions
+    )
     doc_eff_decisions = extract_cell_enums("## 3. `tool_call`", "effective_decision")
-    assert code_eff_decisions == doc_eff_decisions, f"effective_decision mismatch: code={code_eff_decisions}, doc={doc_eff_decisions}"
+    assert code_eff_decisions == doc_eff_decisions, (
+        f"effective_decision mismatch: code={code_eff_decisions}, doc={doc_eff_decisions}"
+    )
 
     # 4. pin_status
     code_pin_statuses = {x.value for x in PinStatus}
     expected_pin_statuses = {"pinned", "unpinned", "changed", "unchecked"}
     assert code_pin_statuses == expected_pin_statuses
-    assert set(typing.get_args(ToolCallEvent.model_fields["pin_status"].annotation)) == expected_pin_statuses
+    assert (
+        set(typing.get_args(ToolCallEvent.model_fields["pin_status"].annotation))
+        == expected_pin_statuses
+    )
     doc_pin_statuses = extract_cell_enums("## 3. `tool_call`", "pin_status")
-    assert code_pin_statuses == doc_pin_statuses, f"pin_status mismatch: code={code_pin_statuses}, doc={doc_pin_statuses}"
+    assert code_pin_statuses == doc_pin_statuses, (
+        f"pin_status mismatch: code={code_pin_statuses}, doc={doc_pin_statuses}"
+    )
 
     # 5. event_type
     code_event_types = {
@@ -345,4 +364,6 @@ def test_audit_log_schema_enums_bidirectional_contract() -> None:
             event_name = line_str.split("|")[1].strip().strip("`")
             if event_name and event_name != "event_type":
                 doc_event_types.add(event_name)
-    assert code_event_types == doc_event_types, f"event_type mismatch: code={code_event_types}, doc={doc_event_types}"
+    assert code_event_types == doc_event_types, (
+        f"event_type mismatch: code={code_event_types}, doc={doc_event_types}"
+    )

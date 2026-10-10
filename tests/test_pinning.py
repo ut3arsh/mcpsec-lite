@@ -376,9 +376,9 @@ def test_pinstore_multiprocess_concurrency(tmp_path: Path) -> None:
     final_store = PinStore(store_file)
     final_store.load(fail_closed=True)
     total_tools = sum(len(s.tools) for s in final_store.servers.values())
-    assert (
-        total_tools == num_processes * tools_per_process
-    ), f"Expected {num_processes * tools_per_process} tools, got {total_tools}"
+    assert total_tools == num_processes * tools_per_process, (
+        f"Expected {num_processes * tools_per_process} tools, got {total_tools}"
+    )
 
 
 @pytest.mark.asyncio
@@ -657,7 +657,9 @@ policies:
 
     # 1. Server info changes in upstream server
     mutated_server_info = {"name": "fs-server", "version": "2.0"}
-    status, diff_summary, _ = pin_store.check_server("fs", [tool_def], server_info=mutated_server_info)
+    status, diff_summary, _ = pin_store.check_server(
+        "fs", [tool_def], server_info=mutated_server_info
+    )
     assert status == "changed"
     assert "server_info changed" in str(diff_summary)
 
@@ -705,14 +707,13 @@ policies:
     ]
     pin_events = [e for e in events if e.event_type == "pin_event"]
     assert any(
-        p.action == "server_info_changed" and p.effective_decision == "logged"
-        for p in pin_events
+        p.action == "server_info_changed" and p.effective_decision == "logged" for p in pin_events
     )
 
 
 def test_meta_no_config_starts_with_unimplemented_protection() -> None:
     """Meta-test: verify that all policy protections are actively enforced and unrecognized directives fail closed."""
-    from mcpsec_core.policy import RawPolicySchema, PolicyError
+    from mcpsec_core.policy import PolicyError, RawPolicySchema
 
     # 1. Enumerate every policy feature key declared in docs/policy_schema.md v1
     # and map each key to a named test asserting its active enforcement.

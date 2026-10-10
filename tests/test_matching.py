@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 import pytest
-from hypothesis import given, settings
+from hypothesis import given
 from hypothesis import strategies as st
 
 from mcpsec_core.matching import (

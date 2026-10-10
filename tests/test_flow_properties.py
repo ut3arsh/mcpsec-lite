@@ -12,7 +12,7 @@ from __future__ import annotations
 import copy
 from typing import Literal
 
-from hypothesis import given, settings
+from hypothesis import given
 from hypothesis import strategies as st
 
 from mcpsec_core.flow import check_flow

@@ -502,7 +502,9 @@ class AuditLogger:
     def log_pin_event(
         self,
         server: str,
-        action: Literal["first_seen", "changed", "approved", "list_changed_received"],
+        action: Literal[
+            "first_seen", "changed", "approved", "list_changed_received", "server_info_changed"
+        ],
         mode: Literal["audit", "strict"],
         effective_decision: Literal["logged", "blocked_until_approved", "accepted"],
         session_id: str | None = None,
