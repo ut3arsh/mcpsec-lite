@@ -142,6 +142,24 @@ approval:
     assert "not in policy approval.allow_clear" in msg4
 
 
+def _mp_approval_worker(log_path_str: str, worker_id: int, count: int) -> None:
+    manager = ApprovalManager(log_path=Path(log_path_str))
+    for i in range(count):
+        call_id = f"mp_w{worker_id}_call_{i}"
+        manager.request_approval(
+            call_id=call_id,
+            session_id=f"sess-{worker_id}",
+            agent_id="agent",
+            server="srv",
+            tool="tool",
+            args={"i": i},
+            capabilities=["egress"],
+            taint_state=[],
+            rule_id="rule",
+        )
+        manager.approve(call_id, operator=f"op-{worker_id}")
+
+
 def test_concurrent_writers_append_only_log(tmp_path: Path) -> None:
     log_file = tmp_path / "concurrent_approvals.jsonl"
     manager = ApprovalManager(log_path=log_file)
@@ -173,6 +191,35 @@ def test_concurrent_writers_append_only_log(tmp_path: Path) -> None:
     # Replay all derived approvals
     all_apprs = manager.get_all_approvals()
     assert len(all_apprs) == num_threads * ops_per_thread
+    assert all(a.status == "approved" for a in all_apprs.values())
+
+
+def test_approval_manager_multiprocess_concurrency(tmp_path: Path) -> None:
+    """Multiple concurrent spawned OS processes appending to approval log do not corrupt it."""
+    import multiprocessing as mp
+
+    log_file = tmp_path / "mp_approvals.jsonl"
+    ctx = mp.get_context("spawn")
+
+    num_processes = 4
+    ops_per_process = 5
+    processes = []
+
+    for worker_id in range(num_processes):
+        p = ctx.Process(
+            target=_mp_approval_worker,
+            args=(str(log_file), worker_id, ops_per_process),
+        )
+        processes.append(p)
+        p.start()
+
+    for p in processes:
+        p.join(timeout=15.0)
+        assert p.exitcode == 0, f"Process {p.pid} failed with exit code {p.exitcode}"
+
+    final_mgr = ApprovalManager(log_path=log_file)
+    all_apprs = final_mgr.get_all_approvals()
+    assert len(all_apprs) == num_processes * ops_per_process
     assert all(a.status == "approved" for a in all_apprs.values())
 
 

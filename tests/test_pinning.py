@@ -315,8 +315,19 @@ def test_pinstore_atomic_lifecycle_and_corruption_handling(tmp_path: Path) -> No
     assert "bad_tool" not in store_skipped.servers["good_srv"].tools
 
 
+def _mp_pinstore_approve_worker(store_path_str: str, worker_id: int, num_tools: int) -> None:
+    store = PinStore(Path(store_path_str))
+    for i in range(num_tools):
+        tool_def = {
+            "name": f"worker_{worker_id}_tool_{i}",
+            "description": f"Description from worker {worker_id} tool {i}",
+            "inputSchema": {"type": "object"},
+        }
+        store.approve_tool(f"server_{worker_id % 3}", tool_def)
+
+
 def test_concurrent_approvers_file_locking(tmp_path: Path) -> None:
-    """Multiple concurrent workers approving tools into PinStore do not corrupt the store."""
+    """Multiple concurrent threads approving tools into PinStore do not corrupt the store."""
     store_file = tmp_path / "concurrent_pins.json"
 
     def approve_worker(worker_id: int) -> None:
@@ -337,6 +348,37 @@ def test_concurrent_approvers_file_locking(tmp_path: Path) -> None:
     final_store.load(fail_closed=True)
     total_tools = sum(len(s.tools) for s in final_store.servers.values())
     assert total_tools == 20, f"Expected 20 approved tools, got {total_tools}"
+
+
+def test_pinstore_multiprocess_concurrency(tmp_path: Path) -> None:
+    """Multiple concurrent spawned OS processes approving tools do not corrupt PinStore."""
+    import multiprocessing as mp
+
+    store_file = tmp_path / "mp_pins.json"
+    ctx = mp.get_context("spawn")
+
+    num_processes = 4
+    tools_per_process = 5
+    processes = []
+
+    for worker_id in range(num_processes):
+        p = ctx.Process(
+            target=_mp_pinstore_approve_worker,
+            args=(str(store_file), worker_id, tools_per_process),
+        )
+        processes.append(p)
+        p.start()
+
+    for p in processes:
+        p.join(timeout=15.0)
+        assert p.exitcode == 0, f"Process {p.pid} failed with exit code {p.exitcode}"
+
+    final_store = PinStore(store_file)
+    final_store.load(fail_closed=True)
+    total_tools = sum(len(s.tools) for s in final_store.servers.values())
+    assert (
+        total_tools == num_processes * tools_per_process
+    ), f"Expected {num_processes * tools_per_process} tools, got {total_tools}"
 
 
 @pytest.mark.asyncio
