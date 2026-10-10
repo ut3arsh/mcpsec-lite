@@ -35,6 +35,8 @@ dev = [
 mcpsec-proxy = "proxy.main:main"
 mcpsec-replay = "cli.replay:main"
 mcpsec-policy = "cli.policy_cli:main"
+mcpsec-approve = "cli.approve_cli:main"
+mcpsec-pin = "cli.pin_cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["mcpsec_core", "proxy", "cli"]
