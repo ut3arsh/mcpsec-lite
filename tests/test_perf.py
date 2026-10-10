@@ -29,7 +29,7 @@ def generate_large_policy_yaml(
     # Register 20 tools
     for t_idx in range(20):
         lines.append(f"  fs.read_file_{t_idx}: [read]")
-        lines.append(f"  http.fetch_{t_idx}: [network_read]")
+        lines.append(f"  http.fetch_{t_idx}: [network_read, egress]")
         register_adapter(
             ToolAdapter(
                 tool_id=f"fs.read_file_{t_idx}",
@@ -57,6 +57,24 @@ def generate_large_policy_yaml(
             lines.append(
                 f'        domain_allowlist: ["api.agent{a_idx}.internal", "*.trusted{t_num}.com"]'
             )
+
+    lines.append("taint_sources:")
+    lines.append("  untrusted_content:")
+    for t_idx in range(10):
+        lines.append(f"    - {{ tool: http.fetch_{t_idx} }}")
+    lines.append("  private_data:")
+    for t_idx in range(10):
+        lines.append(f"    - {{ tool: fs.read_file_{t_idx}, args: {{ path: ['**/.env*'] }} }}")
+
+    lines.append("flow_rules:")
+    lines.append("  - id: no-egress-untrusted")
+    lines.append("    if_session_has: [untrusted_content]")
+    lines.append("    deny_capabilities: [egress]")
+    lines.append("    unless:")
+    lines.append("      domain_allowlist: ['api.github.com', '*.internal.org']")
+    lines.append("  - id: no-egress-private")
+    lines.append("    if_session_has: [private_data]")
+    lines.append("    deny_capabilities: [egress]")
 
     return "\n".join(lines)
 
@@ -176,3 +194,68 @@ def test_check_policy_filesystem_resolution_performance(tmp_path: Path) -> None:
     assert p95 < 10.0, (
         f"check_policy filesystem resolution p95 latency ({p95:.4f} ms) exceeded 10.0 ms target"
     )
+
+
+def test_flow_and_taint_performance_budget(tmp_path: Path) -> None:
+    """Pure computational performance budget for check_flow + update_taint (< 0.2 ms p95 on 1,000-rule policy)."""
+    from mcpsec_core.flow import check_flow
+    from mcpsec_core.models import ResponseSummary, SessionState
+    from mcpsec_core.taint import update_taint
+
+    base = (tmp_path / "workspace").resolve()
+    base_posix = base.as_posix()
+
+    yaml_str = generate_large_policy_yaml(base_posix, num_agents=100, rules_per_agent=10)
+    policy, _, _ = load_policy(yaml_str)
+
+    state = SessionState(session_id="bench-sess", taint=frozenset(["untrusted_content"]))
+    outcome = ResponseSummary(status="ok", bytes=512)
+
+    # Warmup
+    warmup_call = ToolCall(
+        call_id="warmup-flow",
+        session_id="bench-sess",
+        agent_id="agent_42",
+        server="http",
+        tool="fetch_0",
+        args={"url": "https://api.github.com/data"},
+    )
+    for _ in range(50):
+        check_flow(state, warmup_call, policy)
+        update_taint(warmup_call, outcome, state, policy)
+
+    latencies_ms: list[float] = []
+
+    for i in range(1000):
+        tool_idx = i % 10
+        agent_num = i % 100
+        test_call = ToolCall(
+            call_id=f"flow-call-{i}",
+            session_id="bench-sess",
+            agent_id=f"agent_{agent_num}",
+            server="http",
+            tool=f"fetch_{tool_idx}",
+            args={"url": "https://api.github.com/repos"},
+        )
+
+        t_start = time.perf_counter()
+        dec = check_flow(state, test_call, policy)
+        new_state = update_taint(test_call, outcome, state, policy)
+        t_duration_ms = (time.perf_counter() - t_start) * 1000.0
+
+        assert dec.is_allowed
+        assert "untrusted_content" in new_state.taint
+        latencies_ms.append(t_duration_ms)
+
+    latencies_ms.sort()
+    p50 = statistics.median(latencies_ms)
+    p95 = latencies_ms[int(len(latencies_ms) * 0.95)]
+    p99 = latencies_ms[int(len(latencies_ms) * 0.99)]
+
+    print("\n[PERF BUDGET: FLOW + TAINT ENGINE] 1,000-rule policy:")
+    print(f"  p50: {p50:.4f} ms")
+    print(f"  p95: {p95:.4f} ms")
+    print(f"  p99: {p99:.4f} ms")
+
+    # Strictly enforce < 0.2 ms p95 budget (binding standard)
+    assert p95 < 0.2, f"check_flow + update_taint p95 latency ({p95:.4f} ms) exceeded 0.2 ms budget"

@@ -66,7 +66,26 @@ def create_test_fs_server(allowed_dir: Path) -> Server:
         try:
             if name == "read_file":
                 rel_path = args.get("path", "")
-                target_path = (allowed_dir / rel_path).resolve()
+                target_path = Path(rel_path)
+                if not target_path.is_absolute():
+                    target_path = (allowed_dir / target_path).resolve()
+                else:
+                    target_path = target_path.resolve()
+
+                # Native upstream confinement check (TOCTOU defense-in-depth)
+                try:
+                    target_path.relative_to(allowed_dir.resolve())
+                except ValueError:
+                    return types.CallToolResult(
+                        content=[
+                            types.TextContent(
+                                type="text",
+                                text=f"Access denied: path outside allowed root {allowed_dir}",
+                            )
+                        ],
+                        is_error=True,
+                    )
+
                 if not target_path.exists() or not target_path.is_file():
                     err_msg = f"File not found: {rel_path}"
                     return types.CallToolResult(
@@ -79,7 +98,25 @@ def create_test_fs_server(allowed_dir: Path) -> Server:
             elif name == "write_file":
                 rel_path = args.get("path", "")
                 content_str = args.get("content", "")
-                target_path = (allowed_dir / rel_path).resolve()
+                target_path = Path(rel_path)
+                if not target_path.is_absolute():
+                    target_path = (allowed_dir / target_path).resolve()
+                else:
+                    target_path = target_path.resolve()
+
+                try:
+                    target_path.relative_to(allowed_dir.resolve())
+                except ValueError:
+                    return types.CallToolResult(
+                        content=[
+                            types.TextContent(
+                                type="text",
+                                text=f"Access denied: path outside allowed root {allowed_dir}",
+                            )
+                        ],
+                        is_error=True,
+                    )
+
                 target_path.parent.mkdir(parents=True, exist_ok=True)
                 target_path.write_text(content_str, encoding="utf-8")
                 msg = f"Wrote {len(content_str)} bytes to {rel_path}"
@@ -87,7 +124,25 @@ def create_test_fs_server(allowed_dir: Path) -> Server:
 
             elif name == "list_directory":
                 rel_path = args.get("path", ".")
-                target_path = (allowed_dir / rel_path).resolve()
+                target_path = Path(rel_path)
+                if not target_path.is_absolute():
+                    target_path = (allowed_dir / target_path).resolve()
+                else:
+                    target_path = target_path.resolve()
+
+                try:
+                    target_path.relative_to(allowed_dir.resolve())
+                except ValueError:
+                    return types.CallToolResult(
+                        content=[
+                            types.TextContent(
+                                type="text",
+                                text=f"Access denied: path outside allowed root {allowed_dir}",
+                            )
+                        ],
+                        is_error=True,
+                    )
+
                 if not target_path.exists() or not target_path.is_dir():
                     err_msg = f"Directory not found: {rel_path}"
                     return types.CallToolResult(
