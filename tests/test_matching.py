@@ -132,6 +132,53 @@ def test_path_junction_escape_resolution_windows(tmp_path: Path) -> None:
     assert not match_path(norm_junc, [pattern])
 
 
+def test_path_retargeting_symlink_or_junction_re_resolves_and_denies(tmp_path: Path) -> None:
+    """Assert that retargeting a symlink/junction between calls re-resolves and denies without stale caching."""
+    sandbox = tmp_path / "sandbox"
+    sandbox.mkdir()
+    inside = sandbox / "inside"
+    inside.mkdir()
+    inside_file = inside / "file.txt"
+    inside_file.write_text("inside data", encoding="utf-8")
+
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    outside_file = outside / "file.txt"
+    outside_file.write_text("secret data", encoding="utf-8")
+
+    link_path = sandbox / "dyn_link"
+
+    if os.name == "nt":
+        import _winapi
+
+        _winapi.CreateJunction(str(inside), str(link_path))
+    else:
+        try:
+            link_path.symlink_to(inside)
+        except (OSError, NotImplementedError):
+            pytest.skip("Symlink creation not supported")
+
+    sandbox_pattern = compile_path_glob(f"{sandbox}/**")
+
+    # 1. First evaluation: resolves to inside sandbox -> ALLOWED
+    norm1 = normalize_path(str(link_path / "file.txt"))
+    assert match_path(norm1, [sandbox_pattern])
+
+    # 2. Retarget link to outside sandbox
+    if os.name == "nt":
+        import _winapi
+
+        os.rmdir(str(link_path))
+        _winapi.CreateJunction(str(outside), str(link_path))
+    else:
+        link_path.unlink()
+        link_path.symlink_to(outside)
+
+    # 3. Second evaluation on the EXACT SAME path string: must re-resolve to outside -> DENIED
+    norm2 = normalize_path(str(link_path / "file.txt"))
+    assert not match_path(norm2, [sandbox_pattern])
+
+
 def test_path_non_existent_target_parent_resolution(tmp_path: Path) -> None:
     sandbox = tmp_path / "sandbox"
     sandbox.mkdir()

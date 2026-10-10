@@ -277,20 +277,25 @@ def compile_domain_pattern(pattern: str) -> tuple[str, bool, re.Pattern[str] | N
     Returns:
         (raw_host, is_wildcard, compiled_regex_or_none)
     """
+    if not isinstance(pattern, str):
+        raise DomainSecurityError(f"Domain pattern must be a string, got {type(pattern).__name__}")
     p = pattern.strip().lower()
     if p.endswith("."):
         p = p[:-1]
 
     if p.startswith("*."):
         suffix = p[2:]
-        # Convert suffix to punycode if needed
-        ascii_suffix = suffix.encode("idna").decode("ascii")
+        if not suffix:
+            raise DomainSecurityError("Wildcard domain pattern cannot have empty suffix")
+        ascii_suffix, is_ip = normalize_domain_or_url(suffix)
+        if is_ip:
+            raise DomainSecurityError("Wildcard domain pattern cannot target an IP literal")
         # Match subdomains only: one or more labels before the suffix
         escaped_suffix = re.escape(ascii_suffix)
         regex_str = rf"^(?:[a-z0-9_\-]+\.)+{escaped_suffix}$"
-        return p, True, re.compile(regex_str, re.IGNORECASE)
+        return f"*.{ascii_suffix}", True, re.compile(regex_str, re.IGNORECASE)
     else:
-        ascii_host = p.encode("idna").decode("ascii")
+        ascii_host, _ = normalize_domain_or_url(p)
         return ascii_host, False, None
 
 
