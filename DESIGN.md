@@ -26,6 +26,9 @@ AI agents now hold real capabilities (filesystem, HTTP, GitHub, shell, cloud). T
 
 **In scope:** MCP traffic between an agent's MCP client and MCP servers (stdio and HTTP transports).
 
+**MCP Protocol Surface (v1):**
+The proxy advertises **only** the `tools` capability (`listChanged=True`). It does not forward `resources` or `prompts`. Server-initiated MCP requests (including `sampling/createMessage`, `elicitation`, and `roots/list`) and client requests for non-tool surfaces are rejected with an error and audited as `ERR_UNSUPPORTED_SURFACE`.
+
 **Explicit non-goals**
 - Agent-native tools that bypass MCP (built-in shell, browser, file access). **The proxy cannot see or stop these.**
 - Model-level defenses, jailbreak detection, or "catching all injections."
@@ -121,14 +124,15 @@ All four are pure functions over explicit state, so they are unit-testable and f
 Each tool is tagged with capabilities so rules target behavior, not names:
 ```yaml
 capabilities:
+  fetch.fetch:    [network_read, egress]
+  http.fetch:     [network_read, egress]
   http.post:      [egress]
-  http.fetch:     [network_read]
   email.send:     [egress]
   shell.exec:     [exec]
   fs.write_file:  [write]
   fs.read_file:   [read]
 ```
-Unlisted tools have no capabilities and are default-denied by policy.
+Unlisted tools have no capabilities and are default-denied by policy. Note that GitHub read tools can still encode data in owner/repo parameters (an accepted v1 limitation).
 
 ### 5.2 Taint sources (who labels what)
 Labels are assigned **by source, declared in policy** — never inferred by a model:
@@ -137,27 +141,35 @@ taint_sources:
   untrusted_content:
     - tool: github.get_issue
     - tool: github.get_pull_request
+    - tool: fetch.fetch
     - tool: http.fetch
   private_data:
     - tool: fs.read_file
       args: { path: ["~/.ssh/**", "**/.env", "**/*secret*"] }
 ```
-A label is added to the session **after** a matching call returns.
+A label is added to the session **after** a matching call returns successfully.
 
-### 5.3 Flow rules
+### 5.3 Flow rules & `unless` exemptions
 ```yaml
 flow_rules:
-  - if_session_has: [untrusted_content]
+  - id: no-egress-after-untrusted
+    if_session_has: [untrusted_content]
     deny_capabilities: [egress, exec]
-  - if_session_has: [private_data]
+    unless:
+      domain_allowlist: ["docs.internal", "*.safe.org"]
+
+  - id: no-egress-after-private
+    if_session_has: [private_data]
     deny_capabilities: [egress]
-  - if_session_has: [untrusted_content, private_data]
-    deny_capabilities: [egress, exec, write]
+
+  - id: gate-write-when-both
+    if_session_has: [untrusted_content, private_data]
+    require_approval_capabilities: [write]
 mode: enforce          # audit | enforce
 approval:
   allow_clear: [untrusted_content]   # private_data cannot be cleared in-session
 ```
-Semantics: labels are monotonic within a session and cleared only by an explicit, logged human approval (`mcpsec-approve --clear-taint untrusted_content`). Approval is CLI-based in v1 (web UI is optional/stretch).
+Semantics: labels are monotonic within a session and cleared only by an explicit, logged human approval (`mcpsec-approve clear-taint <session_id> untrusted_content`). Approval is CLI-based in v1 (web UI is optional/stretch).
 
 ### 5.4 Per-agent allowlists (baseline layer)
 ```yaml

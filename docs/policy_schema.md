@@ -120,6 +120,8 @@ flow_rules:
   - id: no-egress-after-untrusted
     if_session_has: [untrusted_content]
     deny_capabilities: [egress, exec]
+    unless:
+      domain_allowlist: ["docs.internal", "*.safe.org"]
 
   - id: no-egress-after-private
     if_session_has: [private_data]
@@ -131,17 +133,26 @@ flow_rules:
 ```
 
 | Field | Type | Required | Notes |
-|-------|------|----------|-------|
+|---|---|---|---|
 | `id` | string | yes | Unique. Appears in the audit log as `rule_id`. |
 | `if_session_has` | list of labels | yes | **All** listed labels must be present (AND). |
 | `deny_capabilities` | list of tags | one of the two | Matching call is denied. |
 | `require_approval_capabilities` | list of tags | one of the two | Matching call is held for approval. |
+| `unless` | object | no | Optional exemption: `unless: { domain_allowlist: [...] }`. Valid only on rules denying/requiring approval for `egress`. |
+
+### 5.1 Flow rule exemption semantics (`unless`)
+- A flow rule may carry `unless: { domain_allowlist: [...] }`.
+- The rule is skipped for a call **only if every domain-constrained argument parses and matches** the list.
+- **Fail closed:** Any parse failure, unparsable URL, missing argument, or non-matching domain causes the rule to apply.
+- `unless` is valid **only** on rules whose `deny_capabilities` or `require_approval_capabilities` include `egress`, and only for tools with a domain adapter (e.g. `domain_args`).
+- Matching reuses standard domain matching (Unicode normalization, userinfo/IP/scheme rejection).
 
 Evaluation:
 1. Compute the set of rules whose `if_session_has` ⊆ current session labels.
-2. If any matching rule denies a capability the call has ⇒ **deny**.
-3. Else if any matching rule requires approval for a capability the call has ⇒ **require_approval**.
-4. Else flow check passes.
+2. For each rule, evaluate capabilities and apply `unless` exemption if present.
+3. If any matching non-exempt rule denies a capability the call has ⇒ **deny**.
+4. Else if any matching non-exempt rule requires approval for a capability the call has ⇒ **require_approval**.
+5. Else flow check passes.
 
 Decision precedence across all layers: `deny` > `require_approval` > `allow`. A tool whose capabilities are empty is never matched by flow rules (it is already default-denied by §3).
 

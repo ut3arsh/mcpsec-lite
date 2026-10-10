@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
@@ -70,11 +70,16 @@ class TaintSourceEntryModel(PolicyBaseModel):
     args: dict[str, list[str]] | None = None
 
 
+class FlowRuleUnlessModel(PolicyBaseModel):
+    domain_allowlist: list[str]
+
+
 class FlowRuleModel(PolicyBaseModel):
     id: str
     if_session_has: list[str]
     deny_capabilities: list[str] | None = None
     require_approval_capabilities: list[str] | None = None
+    unless: FlowRuleUnlessModel | None = None
 
 
 class ApprovalConfigModel(PolicyBaseModel):
@@ -128,6 +133,28 @@ class CompiledToolRule:
 
 
 @dataclass(frozen=True)
+class CompiledFlowRule:
+    id: str
+    if_session_has: frozenset[str]
+    deny_capabilities: frozenset[str]
+    require_approval_capabilities: frozenset[str]
+    has_unless: bool = False
+    unless_domain_rules: tuple[tuple[str, bool, re.Pattern[str] | None], ...] = ()
+    unless_exact_hosts: frozenset[str] = frozenset()
+    unless_wildcard_regexes: tuple[re.Pattern[str], ...] = ()
+    if_session_has_tuple: tuple[str, ...] = ()
+    deny_caps_tuple: tuple[str, ...] = ()
+    appr_caps_tuple: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class CompiledTaintSource:
+    label: str
+    tool_id: str
+    args_patterns: dict[str, tuple[re.Pattern[str], ...]]
+
+
+@dataclass(frozen=True)
 class Policy:
     """Immutable compiled policy object used for O(1) runtime checks."""
 
@@ -145,6 +172,8 @@ class Policy:
     pinning: PinningConfigModel
     detectors: DetectorsConfigModel
     redaction: RedactionConfigModel
+    compiled_flow_rules: tuple[CompiledFlowRule, ...] = ()
+    taint_sources_by_tool: dict[str, tuple[CompiledTaintSource, ...]] = field(default_factory=dict)
 
 
 def validate_and_compile_policy(
@@ -200,11 +229,7 @@ def validate_and_compile_policy(
 
     # Part D Guard: No false assurance for unenforced policy features at proxy startup
     if check_unenforced_guards:
-        has_unenforced_features = bool(
-            parsed_schema.flow_rules
-            or parsed_schema.taint_sources
-            or parsed_schema.pinning.mode == "strict"
-        )
+        has_unenforced_features = bool(parsed_schema.pinning.mode == "strict")
         if has_unenforced_features:
             if parsed_schema.mode == "enforce":
                 errors.append(
@@ -212,14 +237,14 @@ def validate_and_compile_policy(
                         "code": "ERR_NOT_YET_ENFORCED",
                         "path": "mode",
                         "message": (
-                            "Flow rules, taint tracking, and strict pinning are not yet enforced in Week 3; "
-                            "policy cannot start in mode: enforce with these features configured."
+                            "Strict pinning is not yet enforced (scheduled for Week 5); "
+                            "policy cannot start in mode: enforce with strict pinning configured."
                         ),
                     }
                 )
             else:
                 warnings.append(
-                    "Flow rules, taint tracking, or strict pinning are configured but not yet enforced in Week 3; "
+                    "Strict pinning is configured but not yet enforced (scheduled for Week 5); "
                     "running in mode: audit with advisory logging only."
                 )
 
@@ -314,6 +339,50 @@ def validate_and_compile_policy(
                     ),
                 }
             )
+
+    # 6b. Validation for 'unless' exemption on flow_rules (ADR-012)
+    for i, f_rule in enumerate(parsed_schema.flow_rules):
+        if f_rule.unless is not None:
+            domains = f_rule.unless.domain_allowlist
+            if (
+                not domains
+                or not isinstance(domains, list)
+                or not all(isinstance(d, str) and d.strip() for d in domains)
+            ):
+                errors.append(
+                    {
+                        "code": "ERR_INVALID_UNLESS",
+                        "path": f"flow_rules[{i}].unless.domain_allowlist",
+                        "message": (
+                            f"Flow rule '{f_rule.id}' unless must specify a non-empty domain_allowlist list of strings"
+                        ),
+                    }
+                )
+            all_rule_caps = set(f_rule.deny_capabilities or []) | set(
+                f_rule.require_approval_capabilities or []
+            )
+            if "egress" not in all_rule_caps:
+                errors.append(
+                    {
+                        "code": "ERR_INVALID_UNLESS",
+                        "path": f"flow_rules[{i}].unless",
+                        "message": (
+                            f"Flow rule '{f_rule.id}' specifies 'unless' exemption, but rule capabilities "
+                            f"{sorted(all_rule_caps)} do not include 'egress'"
+                        ),
+                    }
+                )
+            for d_idx, dom_pat in enumerate(domains or []):
+                try:
+                    compile_domain_pattern(dom_pat)
+                except Exception as exc:
+                    errors.append(
+                        {
+                            "code": "ERR_INVALID_DOMAIN_PATTERN",
+                            "path": f"flow_rules[{i}].unless.domain_allowlist[{d_idx}]",
+                            "message": f"Failed to compile domain pattern '{dom_pat}': {exc}",
+                        }
+                    )
 
     # 7. Rule 7 & 8: Tool capabilities and argument adapter constraints
     capabilities_map: dict[str, tuple[str, ...]] = {
@@ -410,14 +479,18 @@ def validate_and_compile_policy(
 
     # Check for taint_sources glob compilation (Rule 9)
     compiled_taint_sources: dict[str, tuple[TaintSourceEntryModel, ...]] = {}
+    taint_sources_by_tool: dict[str, list[CompiledTaintSource]] = {}
+
     for label, entries in parsed_schema.taint_sources.items():
         compiled_taint_sources[label] = tuple(entries)
         for e_idx, entry in enumerate(entries):
+            args_patterns: dict[str, tuple[re.Pattern[str], ...]] = {}
             if entry.args:
                 for arg_k, globs in entry.args.items():
+                    compiled_globs = []
                     for g_str in globs:
                         try:
-                            compile_path_glob(g_str)
+                            compiled_globs.append(compile_path_glob(g_str))
                         except Exception as exc:
                             errors.append(
                                 {
@@ -426,6 +499,49 @@ def validate_and_compile_policy(
                                     "message": f"Failed to compile taint glob '{g_str}': {exc}",
                                 }
                             )
+                    args_patterns[arg_k] = tuple(compiled_globs)
+
+            compiled_src = CompiledTaintSource(
+                label=label,
+                tool_id=entry.tool,
+                args_patterns=args_patterns,
+            )
+            taint_sources_by_tool.setdefault(entry.tool, []).append(compiled_src)
+
+    frozen_taint_sources_by_tool = {k: tuple(v) for k, v in taint_sources_by_tool.items()}
+
+    # Compile flow rules
+    compiled_flow_rules: list[CompiledFlowRule] = []
+    for f_rule in parsed_schema.flow_rules:
+        unless_rules: list[tuple[str, bool, re.Pattern[str] | None]] = []
+        exact_hosts: set[str] = set()
+        wildcards: list[re.Pattern[str]] = []
+        if f_rule.unless and f_rule.unless.domain_allowlist:
+            for dom_pat in f_rule.unless.domain_allowlist:
+                try:
+                    raw_h, is_w, rx = compile_domain_pattern(dom_pat)
+                    unless_rules.append((raw_h, is_w, rx))
+                    if is_w and rx is not None:
+                        wildcards.append(rx)
+                    else:
+                        exact_hosts.add(raw_h)
+                except Exception:
+                    pass
+        compiled_flow_rules.append(
+            CompiledFlowRule(
+                id=f_rule.id,
+                if_session_has=frozenset(f_rule.if_session_has),
+                deny_capabilities=frozenset(f_rule.deny_capabilities or []),
+                require_approval_capabilities=frozenset(f_rule.require_approval_capabilities or []),
+                has_unless=bool(f_rule.unless is not None),
+                unless_domain_rules=tuple(unless_rules),
+                unless_exact_hosts=frozenset(exact_hosts),
+                unless_wildcard_regexes=tuple(wildcards),
+                if_session_has_tuple=tuple(f_rule.if_session_has),
+                deny_caps_tuple=tuple(f_rule.deny_capabilities or ()),
+                appr_caps_tuple=tuple(f_rule.require_approval_capabilities or ()),
+            )
+        )
 
     # Raise all errors together if any occurred
     if errors:
@@ -474,6 +590,8 @@ def validate_and_compile_policy(
         pinning=parsed_schema.pinning,
         detectors=parsed_schema.detectors,
         redaction=parsed_schema.redaction,
+        compiled_flow_rules=tuple(compiled_flow_rules),
+        taint_sources_by_tool=frozen_taint_sources_by_tool,
     )
 
     return policy_obj, warnings

