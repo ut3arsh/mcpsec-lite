@@ -220,7 +220,9 @@ async def run_proxy(
             "sampling/createMessage",
             "roots/list",
         ]:
-            server.add_request_handler(surface_method, types.RequestParams, handle_unsupported_surface)
+            server.add_request_handler(
+                surface_method, types.RequestParams, handle_unsupported_surface
+            )
 
         close_reason: Literal["disconnect", "shutdown", "error"] = "disconnect"
         try:
