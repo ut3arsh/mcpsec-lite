@@ -242,3 +242,107 @@ def test_audit_logger_fsync_mode(tmp_path: Path) -> None:
     assert ev.seq == 1
     assert log_file.exists()
     assert log_file.stat().st_size > 0
+
+
+def test_audit_log_schema_enums_bidirectional_contract() -> None:
+    """Assert every enum value emitted by code appears in docs/audit_log_schema.md and vice versa."""
+    import typing
+    from mcpsec_core.models import (
+        DecisionLayer,
+        EffectiveDecision,
+        PinEvent,
+        PinStatus,
+        ToolCallEvent,
+        PolicyLoadedEvent,
+        SessionStartEvent,
+        SessionEndEvent,
+        ApprovalEvent,
+    )
+
+    schema_doc_path = Path(__file__).parent.parent / "docs" / "audit_log_schema.md"
+    assert schema_doc_path.exists(), f"Missing schema doc at {schema_doc_path}"
+    doc_text = schema_doc_path.read_text(encoding="utf-8")
+
+    def extract_cell_enums(section_header: str, field_name: str) -> set[str]:
+        import re
+        section = doc_text.split(section_header)[1].split("\n## ")[0]
+        for line in section.splitlines():
+            line_str = line.strip()
+            if line_str.startswith(f"| `{field_name}` |"):
+                masked = line_str.replace(r"\|", "%%PIPE%%")
+                parts = [p.strip().replace("%%PIPE%%", "|") for p in masked.strip("|").split("|")]
+                if len(parts) >= 3:
+                    cell = parts[2]
+                    # Enum definitions appear before explanatory notes / secondary sentences
+                    def_part = cell.split(". ")[0].split("(")[0]
+                    return set(re.findall(r"`([a-z_]+)`", def_part))
+        return set()
+
+    # 1. pin_event.action
+    code_pin_actions = set(typing.get_args(PinEvent.model_fields["action"].annotation))
+    expected_pin_actions = {
+        "first_seen",
+        "changed",
+        "approved",
+        "list_changed_received",
+        "server_info_changed",
+    }
+    assert code_pin_actions == expected_pin_actions
+    doc_pin_actions = extract_cell_enums("## 5. `pin_event`", "action")
+    assert code_pin_actions == doc_pin_actions, f"pin_event.action mismatch: code={code_pin_actions}, doc={doc_pin_actions}"
+
+    # 2. decision_layer
+    code_decision_layers = {x.value for x in DecisionLayer}
+    expected_decision_layers = {"pinning", "policy", "flow", "approval", "none"}
+    assert code_decision_layers == expected_decision_layers
+    assert set(typing.get_args(ToolCallEvent.model_fields["decision_layer"].annotation)) == expected_decision_layers
+    doc_decision_layers = extract_cell_enums("## 3. `tool_call`", "decision_layer")
+    assert code_decision_layers == doc_decision_layers, f"decision_layer mismatch: code={code_decision_layers}, doc={doc_decision_layers}"
+
+    # 3. effective_decision
+    code_eff_decisions = {x.value for x in EffectiveDecision}
+    expected_eff_decisions = {"forwarded", "blocked", "held"}
+    assert code_eff_decisions == expected_eff_decisions
+    assert set(typing.get_args(ToolCallEvent.model_fields["effective_decision"].annotation)) == expected_eff_decisions
+    doc_eff_decisions = extract_cell_enums("## 3. `tool_call`", "effective_decision")
+    assert code_eff_decisions == doc_eff_decisions, f"effective_decision mismatch: code={code_eff_decisions}, doc={doc_eff_decisions}"
+
+    # 4. pin_status
+    code_pin_statuses = {x.value for x in PinStatus}
+    expected_pin_statuses = {"pinned", "unpinned", "changed", "unchecked"}
+    assert code_pin_statuses == expected_pin_statuses
+    assert set(typing.get_args(ToolCallEvent.model_fields["pin_status"].annotation)) == expected_pin_statuses
+    doc_pin_statuses = extract_cell_enums("## 3. `tool_call`", "pin_status")
+    assert code_pin_statuses == doc_pin_statuses, f"pin_status mismatch: code={code_pin_statuses}, doc={doc_pin_statuses}"
+
+    # 5. event_type
+    code_event_types = {
+        cls.model_fields["event_type"].default
+        for cls in (
+            PolicyLoadedEvent,
+            SessionStartEvent,
+            SessionEndEvent,
+            ToolCallEvent,
+            ApprovalEvent,
+            PinEvent,
+        )
+    }
+    expected_event_types = {
+        "session_start",
+        "session_end",
+        "policy_loaded",
+        "tool_call",
+        "approval",
+        "pin_event",
+    }
+    assert code_event_types == expected_event_types
+
+    doc_event_types = set()
+    sec1 = doc_text.split("## 1. Event types")[1].split("\n## ")[0]
+    for line in sec1.splitlines():
+        line_str = line.strip()
+        if line_str.startswith("| `"):
+            event_name = line_str.split("|")[1].strip().strip("`")
+            if event_name and event_name != "event_type":
+                doc_event_types.add(event_name)
+    assert code_event_types == doc_event_types, f"event_type mismatch: code={code_event_types}, doc={doc_event_types}"

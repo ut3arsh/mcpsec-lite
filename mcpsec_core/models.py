@@ -203,7 +203,9 @@ class PinEvent(BaseAuditEvent):
     session_id: str | None = None
     server: str
     tool: str | None = None
-    action: Literal["first_seen", "changed", "approved", "list_changed_received"]
+    action: Literal[
+        "first_seen", "changed", "approved", "list_changed_received", "server_info_changed"
+    ]
     old_hash: str | None = None
     new_hash: str | None = None
     diff_summary: str | None = None

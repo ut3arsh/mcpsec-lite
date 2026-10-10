@@ -85,7 +85,7 @@ Every line carries `schema_version` and `event_type`. Consumers must ignore unkn
 |-------|------|-------|
 | `server` | string | |
 | `tool` | string \| null | `null` for server-level events. |
-| `action` | enum | `first_seen` \| `changed` \| `approved` \| `list_changed_received` |
+| `action` | enum | `first_seen` \| `changed` \| `approved` \| `list_changed_received` \| `server_info_changed` |
 | `old_hash` / `new_hash` | string \| null | SHA-256 hex. |
 | `diff_summary` | string \| null | e.g. `description changed (+214 chars)`. |
 | `mode` | enum | `audit` \| `strict` |
