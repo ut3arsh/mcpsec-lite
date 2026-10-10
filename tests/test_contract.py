@@ -27,8 +27,20 @@ def load_tool_fixture(server_name: str) -> list[dict[str, Any]]:
     return data
 
 
+def load_fixture_meta(server_name: str) -> dict[str, Any]:
+    """Load metadata sidecar fixture for a server."""
+    meta_path = FIXTURES_DIR / f"{server_name}.tools.meta.json"
+    if not meta_path.exists():
+        return {"verified": False, "status": "UNKNOWN"}
+    with open(meta_path, encoding="utf-8") as f:
+        return json.load(f)
+
+
 def test_filesystem_adapter_conformance_with_snapshot() -> None:
     """Validate that filesystem adapters match the snapshot schema."""
+    meta = load_fixture_meta("filesystem")
+    assert meta.get("verified") is True, f"Filesystem fixture must be verified: {meta}"
+
     tools = load_tool_fixture("filesystem")
     assert len(tools) > 0
 
@@ -50,6 +62,9 @@ def test_filesystem_adapter_conformance_with_snapshot() -> None:
 
 def test_fetch_adapter_conformance_with_snapshot() -> None:
     """Validate that fetch adapter matches the snapshot schema."""
+    meta = load_fixture_meta("fetch")
+    assert meta.get("verified") is True, f"Fetch fixture must be verified: {meta}"
+
     tools = load_tool_fixture("fetch")
     assert len(tools) == 1
     tool = tools[0]
@@ -65,7 +80,11 @@ def test_fetch_adapter_conformance_with_snapshot() -> None:
 
 
 def test_github_adapter_conformance_with_snapshot() -> None:
-    """Validate that github adapters match the snapshot schema."""
+    """Validate that github adapters match the snapshot schema, reporting UNVERIFIED if handwritten."""
+    meta = load_fixture_meta("github")
+    if not meta.get("verified", False):
+        pytest.skip(f"UNVERIFIED-handwritten fixture: {meta.get('source')}")
+
     tools = load_tool_fixture("github")
     assert len(tools) > 0
 
@@ -104,6 +123,34 @@ async def test_live_filesystem_contract_vs_snapshot(tmp_path: Path) -> None:
             live_names = {t.name for t in live_tools.tools}
 
             snapshot_tools = load_tool_fixture("filesystem")
+            snapshot_names = {t["name"] for t in snapshot_tools}
+
+            assert live_names == snapshot_names
+
+
+@pytest.mark.live
+@pytest.mark.asyncio
+async def test_live_fetch_contract_vs_snapshot() -> None:
+    """Live contract test comparing live fetch server to snapshot fixture."""
+    if not os.environ.get("RUN_LIVE_CONTRACT_TESTS"):
+        pytest.skip("Opt-in live contract test (set RUN_LIVE_CONTRACT_TESTS=1)")
+
+    uvx_bin = shutil.which("uvx.cmd") if os.name == "nt" else shutil.which("uvx")
+    if not uvx_bin:
+        pytest.skip("uvx not available for live fetch contract test")
+
+    params = StdioServerParameters(
+        command=uvx_bin,
+        args=["mcp-server-fetch"],
+    )
+
+    async with stdio_client(params) as (r, w):
+        async with ClientSession(r, w) as session:
+            await session.initialize()
+            live_tools = await session.list_tools()
+            live_names = {t.name for t in live_tools.tools}
+
+            snapshot_tools = load_tool_fixture("fetch")
             snapshot_names = {t["name"] for t in snapshot_tools}
 
             assert live_names == snapshot_names

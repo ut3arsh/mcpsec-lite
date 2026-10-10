@@ -221,24 +221,19 @@ policies:
   - agent: "*"
     tools:
       fs.read_file: {}
-taint_sources:
-  untrusted_content:
-    - tool: fs.read_file
-flow_rules:
-  - id: rule-1
-    if_session_has: [untrusted_content]
-    deny_capabilities: [read]
+pinning:
+  mode: strict
 """
     with pytest.raises(PolicyError) as exc_info:
         load_policy(yaml_enforce, check_unenforced_guards=True)
     assert any(e["code"] == "ERR_NOT_YET_ENFORCED" for e in exc_info.value.errors)
 
 
-def test_unenforced_policy_allowed_with_warning_in_audit_mode() -> None:
-    """Test that policy with flow_rules/taint_sources starts with warning in audit mode."""
-    yaml_audit = """
+def test_flow_rules_and_taint_sources_now_enforced_in_enforce_mode() -> None:
+    """Test that Week 4 flow_rules and taint_sources load cleanly without ERR_NOT_YET_ENFORCED."""
+    yaml_enforce = """
 version: 1
-mode: audit
+mode: enforce
 capabilities:
   fs.read_file: [read]
 policies:
@@ -253,6 +248,25 @@ flow_rules:
     if_session_has: [untrusted_content]
     deny_capabilities: [read]
 """
+    policy, p_hash, warnings = load_policy(yaml_enforce, check_unenforced_guards=True)
+    assert policy.mode == "enforce"
+    assert len(policy.compiled_flow_rules) == 1
+
+
+def test_unenforced_policy_allowed_with_warning_in_audit_mode() -> None:
+    """Test that policy with strict pinning starts with warning in audit mode."""
+    yaml_audit = """
+version: 1
+mode: audit
+capabilities:
+  fs.read_file: [read]
+policies:
+  - agent: "*"
+    tools:
+      fs.read_file: {}
+pinning:
+  mode: strict
+"""
     policy, p_hash, warnings = load_policy(yaml_audit, check_unenforced_guards=True)
     assert policy.mode == "audit"
-    assert any("not yet enforced in Week 3" in w for w in warnings)
+    assert any("Strict pinning" in w for w in warnings)

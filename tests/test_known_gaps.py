@@ -124,4 +124,6 @@ policies:
 
     # Without open-by-handle or kernel namespace guarantees, the check was already passed
     # but subsequent read would resolve to secret outside sandbox.
-    pytest.fail("Resolved path cannot detect dynamic TOCTOU junction swap without kernel descriptor pinning")
+    pytest.fail(
+        "Resolved path cannot detect dynamic TOCTOU junction swap without kernel descriptor pinning"
+    )

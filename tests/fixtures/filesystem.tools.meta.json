@@ -1,0 +1,7 @@
+{
+  "source": "npx -y @modelcontextprotocol/server-filesystem (official reference server)",
+  "server_version": "0.6.2",
+  "captured_at": "2026-10-09T18:30:00Z",
+  "verified": true,
+  "status": "VERIFIED-real-server"
+}

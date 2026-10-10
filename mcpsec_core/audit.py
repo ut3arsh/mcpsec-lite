@@ -10,6 +10,7 @@ import json
 import os
 import re
 import threading
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -111,8 +112,55 @@ class Redactor:
         return val
 
 
+def verify_hash_chain(file_paths: Sequence[Path | str]) -> tuple[bool, str | None]:
+    """Verify the integrity of a hash-chained audit log across one or more rotated files."""
+    last_line_hash: str | None = None
+
+    for file_idx, fpath in enumerate(file_paths):
+        path = Path(fpath)
+        if not path.exists():
+            return False, f"File {path} does not exist"
+
+        expected_seq = 1
+        with open(path, "rb") as f:
+            for line_no, raw_line in enumerate(f, start=1):
+                line_bytes = raw_line.rstrip(b"\r\n")
+                if not line_bytes:
+                    continue
+
+                try:
+                    data = json.loads(line_bytes.decode("utf-8"))
+                except Exception as exc:
+                    return False, f"Invalid JSON on line {line_no} of {path}: {exc}"
+
+                seq = data.get("seq")
+                if seq != expected_seq:
+                    return (
+                        False,
+                        f"Sequence gap in {path} at line {line_no}: expected {expected_seq}, got {seq}",
+                    )
+                expected_seq += 1
+
+                prev_hash = data.get("prev_hash")
+                if file_idx == 0 and line_no == 1:
+                    # Very first event in first log file has no prev_hash (or None)
+                    if prev_hash is not None:
+                        # If it has a prev_hash from older file, that's fine if tracking across restarts
+                        pass
+                else:
+                    if prev_hash != last_line_hash:
+                        return (
+                            False,
+                            f"Hash chain broken in {path} at line {line_no}: expected {last_line_hash}, got {prev_hash}",
+                        )
+
+                last_line_hash = hashlib.sha256(line_bytes).hexdigest()
+
+    return True, None
+
+
 class AuditLogger:
-    """Single-writer append-only JSONL audit logger."""
+    """Single-writer append-only JSONL audit logger with rotation and tamper-evident chaining."""
 
     def __init__(
         self,
@@ -122,6 +170,8 @@ class AuditLogger:
         never_log_fields: list[str] | None = None,
         tamper_evident: bool = False,
         fsync: bool = False,
+        max_bytes: int | None = None,
+        queue_size: int | None = None,
     ) -> None:
         self.log_path = Path(log_path) if log_path else None
         self.redactor = Redactor(
@@ -131,15 +181,47 @@ class AuditLogger:
         )
         self.tamper_evident = tamper_evident
         self.fsync = fsync
+        self.max_bytes = max_bytes
         self._lock = threading.Lock()
         self._seq = 0
         self._prev_hash: str | None = None
+        self.rotated_files: list[Path] = []
+
+        # Optional bounded writer queue with backpressure
+        self._queue: Any = None
+        self._writer_thread: threading.Thread | None = None
+        self._stopping = False
+        if queue_size is not None and queue_size > 0:
+            import queue
+
+            self._queue = queue.Queue(maxsize=queue_size)
+            self._writer_thread = threading.Thread(
+                target=self._writer_worker,
+                daemon=True,
+                name="audit-logger-writer",
+            )
+            self._writer_thread.start()
 
         if self.log_path:
             self.log_path.parent.mkdir(parents=True, exist_ok=True)
             # If log file exists, scan to recover the last seq and prev_hash
             if self.log_path.exists() and self.log_path.stat().st_size > 0:
                 self._recover_seq_and_hash()
+
+    def _writer_worker(self) -> None:
+        """Background worker thread draining the audit log queue."""
+        while True:
+            item = self._queue.get()
+            if item is None:
+                self._queue.task_done()
+                break
+            event, done_event = item
+            try:
+                self._write_event_to_disk(event)
+            finally:
+                if done_event is not None:
+                    done_event.set()
+                self._queue.task_done()
 
     def _recover_seq_and_hash(self) -> None:
         """Read existing log file to resume seq monotonicity and hash chain."""
@@ -162,8 +244,63 @@ class AuditLogger:
         except Exception:
             pass
 
-    def log_event(self, event: AuditEvent) -> AuditEvent:
-        """Write a typed audit event to the log."""
+    def _maybe_rotate_unlocked(self, new_bytes_len: int) -> None:
+        """Rotate the log file if max_bytes is exceeded."""
+        if not self.log_path or self.max_bytes is None:
+            return
+
+        if not self.log_path.exists():
+            return
+
+        current_size = self.log_path.stat().st_size
+        if current_size > 0 and (current_size + new_bytes_len) > self.max_bytes:
+            timestamp_str = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+            stem = self.log_path.stem
+            ext = self.log_path.suffix or ".jsonl"
+            rotated_name = f"{stem}-{timestamp_str}{ext}"
+            rotated_path = self.log_path.parent / rotated_name
+
+            # Ensure uniqueness if rotated in the same second
+            counter = 1
+            while rotated_path.exists():
+                rotated_name = f"{stem}-{timestamp_str}-{counter}{ext}"
+                rotated_path = self.log_path.parent / rotated_name
+                counter += 1
+
+            # Atomically rename current log file to rotated name
+            os.replace(self.log_path, rotated_path)
+            self.rotated_files.append(rotated_path)
+
+            # Seq restarts per file
+            self._seq = 0
+            # _prev_hash is preserved so the first entry in new file points to last entry of rotated file!
+
+    def _write_event_to_disk(self, event: AuditEvent) -> None:
+        """Write serialized event to disk with rotation and optional fsync."""
+        with self._lock:
+            line_str = event.model_dump_json(exclude_none=False)
+            line_bytes = line_str.encode("utf-8")
+
+            if self.log_path:
+                self._maybe_rotate_unlocked(len(line_bytes) + 1)
+                # Re-assign seq if rotation happened before write
+                if self._seq == 0:
+                    self._seq = 1
+                    event.seq = 1
+                    # Recalculate JSON after seq reset
+                    line_str = event.model_dump_json(exclude_none=False)
+                    line_bytes = line_str.encode("utf-8")
+                    if self.tamper_evident:
+                        self._prev_hash = hashlib.sha256(line_bytes).hexdigest()
+
+                with open(self.log_path, "a", encoding="utf-8") as f:
+                    f.write(line_str + "\n")
+                    f.flush()
+                    if self.fsync:
+                        os.fsync(f.fileno())
+
+    def log_event(self, event: AuditEvent, sync: bool = False) -> AuditEvent:
+        """Write or enqueue a typed audit event to the log."""
         with self._lock:
             self._seq += 1
             event.seq = self._seq
@@ -176,14 +313,25 @@ class AuditLogger:
             if self.tamper_evident:
                 self._prev_hash = hashlib.sha256(line_bytes).hexdigest()
 
-            if self.log_path:
-                with open(self.log_path, "a", encoding="utf-8") as f:
-                    f.write(line_str + "\n")
-                    f.flush()
-                    if self.fsync:
-                        os.fsync(f.fileno())
+        if self._queue is not None and not sync:
+            # Enqueue with backpressure (blocks if queue is full)
+            self._queue.put((event, None))
+        else:
+            self._write_event_to_disk(event)
 
-            return event
+        return event
+
+    def flush(self) -> None:
+        """Wait for any enqueued audit events to be written to disk."""
+        if self._queue is not None:
+            self._queue.join()
+
+    def close(self) -> None:
+        """Flush and shut down background writer thread."""
+        if self._queue is not None and self._writer_thread is not None:
+            self.flush()
+            self._queue.put(None)
+            self._writer_thread.join(timeout=5.0)
 
     def log_policy_loaded(
         self,

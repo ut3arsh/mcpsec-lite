@@ -156,6 +156,9 @@ def test_seq_monotonicity_and_recovery(tmp_path: Path) -> None:
 
 
 def test_pin_status_enum_matches_schema_doc() -> None:
+    """Strictly assert {pinned, unpinned, changed, unchecked} equals the list parsed from docs/audit_log_schema.md."""
+    import re
+
     from mcpsec_core.models import PinStatus
 
     expected_statuses = {"pinned", "unpinned", "changed", "unchecked"}
@@ -163,5 +166,79 @@ def test_pin_status_enum_matches_schema_doc() -> None:
     assert actual_statuses == expected_statuses
 
     schema_doc = Path("docs/audit_log_schema.md").read_text(encoding="utf-8")
-    for status in expected_statuses:
-        assert f"`{status}`" in schema_doc or f'"{status}"' in schema_doc or status in schema_doc
+    # Find the line defining pin_status in Section 3
+    match = re.search(r"\|\s*`pin_status`\s*\|\s*enum\s*\|\s*(.*?)\|\s*$", schema_doc, re.MULTILINE)
+    assert match is not None, "pin_status definition not found in docs/audit_log_schema.md"
+    cell_content = match.group(1)
+    parsed_enum = set(re.findall(r"`([a-z_]+)`", cell_content))
+    assert parsed_enum == expected_statuses, (
+        f"docs/audit_log_schema.md pin_status enum mismatch: {parsed_enum} != {expected_statuses}"
+    )
+
+
+def test_audit_log_rotation_and_tamper_evident_hash_chain_continuity(tmp_path: Path) -> None:
+    """Test log rotation by max_bytes and tamper-evident hash chain continuity across rotated files."""
+    from mcpsec_core.audit import verify_hash_chain
+
+    log_file = tmp_path / "audit.jsonl"
+    # Set small max_bytes so each event triggers rotation
+    logger = AuditLogger(
+        log_path=log_file,
+        log_args="redacted",
+        tamper_evident=True,
+        max_bytes=350,
+    )
+
+    # Log 4 events across rotations
+    for i in range(1, 5):
+        logger.log_session_start(
+            session_id=f"session-rot-{i}",
+            agent_id=f"agent-{i}",
+            policy_hash="test_policy_hash_12345",
+        )
+
+    assert len(logger.rotated_files) >= 1
+    all_files = [*logger.rotated_files, log_file]
+
+    # Verify each rotated file has valid events and seq restarts per file
+    valid, err_msg = verify_hash_chain(all_files)
+    assert valid is True, f"Hash chain verification failed: {err_msg}"
+
+
+def test_audit_logger_bounded_queue_backpressure(tmp_path: Path) -> None:
+    """Test bounded writer queue with backpressure and graceful flush/close."""
+    log_file = tmp_path / "audit_queue.jsonl"
+    logger = AuditLogger(
+        log_path=log_file,
+        log_args="redacted",
+        queue_size=5,
+    )
+
+    for i in range(1, 15):
+        logger.log_session_start(
+            session_id=f"session-q-{i}",
+            agent_id=f"agent-{i}",
+            policy_hash="hash_q",
+        )
+
+    logger.flush()
+    logger.close()
+
+    lines = log_file.read_text(encoding="utf-8").strip().split("\n")
+    assert len(lines) == 14
+    for idx, line in enumerate(lines, start=1):
+        data = json.loads(line)
+        assert data["seq"] == idx
+
+
+def test_audit_logger_fsync_mode(tmp_path: Path) -> None:
+    """Test audit logger with fsync enabled."""
+    log_file = tmp_path / "audit_fsync.jsonl"
+    logger = AuditLogger(
+        log_path=log_file,
+        fsync=True,
+    )
+    ev = logger.log_policy_loaded("proxy.yaml", "dummy_hash")
+    assert ev.seq == 1
+    assert log_file.exists()
+    assert log_file.stat().st_size > 0
