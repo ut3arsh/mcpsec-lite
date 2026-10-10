@@ -7,6 +7,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -53,7 +54,11 @@ with open(r"{pid_file}", "w") as f:
 time.sleep(60)
 """
 
-    parent_proc = subprocess.Popen([sys.executable, "-c", worker_code])
+    kwargs: dict[str, Any] = {}
+    if sys.platform != "win32":
+        kwargs["start_new_session"] = True
+
+    parent_proc = subprocess.Popen([sys.executable, "-c", worker_code], **kwargs)
     parent_pid = parent_proc.pid
 
     # Wait for child PID to be written

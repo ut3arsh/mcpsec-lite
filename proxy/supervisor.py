@@ -94,7 +94,11 @@ def kill_process_tree(pid: int) -> None:
         import signal
 
         try:
-            os.killpg(os.getpgid(pid), signal.SIGKILL)
+            pgid = os.getpgid(pid)
+            if pgid != os.getpgid(0):
+                os.killpg(pgid, signal.SIGKILL)
+            else:
+                os.kill(pid, signal.SIGKILL)
         except Exception:
             try:
                 os.kill(pid, signal.SIGKILL)
