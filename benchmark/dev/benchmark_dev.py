@@ -870,7 +870,7 @@ async def run_dev_matrix(output_path: Path) -> str:
 
     config_dir = Path("./benchmark/configs")
     policies: dict[str, Policy] = {}
-    for c in ["C0", "C1", "C2", "C4"]:
+    for c in ["C0", "C1", "C2", "C3", "C4"]:
         pol, _, _ = load_policy(config_dir / f"{c}.yaml")
         policies[c] = pol
 
@@ -891,18 +891,18 @@ async def run_dev_matrix(output_path: Path) -> str:
             pin_store.approve_tool(s, {"name": t, "description": d, "inputSchema": {}})
 
     # Execute attacks
-    attack_results: dict[str, dict[str, bool]] = {c: {} for c in ["C0", "C1", "C2", "C4"]}
+    attack_results: dict[str, dict[str, bool]] = {c: {} for c in ["C0", "C1", "C2", "C3", "C4"]}
     for sc in ATTACK_SCENARIOS:
-        for c in ["C0", "C1", "C2", "C4"]:
+        for c in ["C0", "C1", "C2", "C3", "C4"]:
             succ, _, _, _ = await execute_scenario_through_proxy(
                 sc, policies[c], c, pin_store, tmp_dir
             )
             attack_results[c][sc.id] = succ
 
     # Execute benign
-    benign_results: dict[str, dict[str, bool]] = {c: {} for c in ["C0", "C1", "C2", "C4"]}
+    benign_results: dict[str, dict[str, bool]] = {c: {} for c in ["C0", "C1", "C2", "C3", "C4"]}
     for sc in BENIGN_SCENARIOS:
-        for c in ["C0", "C1", "C2", "C4"]:
+        for c in ["C0", "C1", "C2", "C3", "C4"]:
             succ, _, _, fp = await execute_scenario_through_proxy(
                 sc, policies[c], c, pin_store, tmp_dir
             )
@@ -918,7 +918,7 @@ async def run_dev_matrix(output_path: Path) -> str:
         "|---|---|---|---|",
     ]
 
-    for c in ["C0", "C1", "C2", "C4"]:
+    for c in ["C0", "C1", "C2", "C3", "C4"]:
         k_att = sum(1 for v in attack_results[c].values() if v)
         n_att = len(ATTACK_SCENARIOS)
         asr = k_att / n_att * 100.0
@@ -931,6 +931,7 @@ async def run_dev_matrix(output_path: Path) -> str:
             "C0": "Baseline without proxy (pass-through)",
             "C1": "Static policy allowlists only (Week 2)",
             "C2": "Full Firewall (Policy + Flow Rules + Taint Tracking)",
+            "C3": "Full Firewall + Detectors (Advisory, ADR-003)",
             "C4": "Full Firewall + Strict Tool-Description Pinning",
         }[c]
 
@@ -941,8 +942,8 @@ async def run_dev_matrix(output_path: Path) -> str:
     md.extend(
         [
             "\n## Attack Scenarios Breakdown (22 Scenarios)\n",
-            "| ID | Attack Name | C0 | C1 | C2 | C4 | Defense-Beating Root Cause |",
-            "|---|---|---|---|---|---|---|",
+            "| ID | Attack Name | C0 | C1 | C2 | C3 | C4 | Defense-Beating Root Cause |",
+            "|---|---|---|---|---|---|---|---|",
         ]
     )
 
@@ -950,15 +951,18 @@ async def run_dev_matrix(output_path: Path) -> str:
         c0_s = "PASS" if attack_results["C0"][sc.id] else "BLOCKED"
         c1_s = "PASS" if attack_results["C1"][sc.id] else "BLOCKED"
         c2_s = "PASS" if attack_results["C2"][sc.id] else "BLOCKED"
+        c3_s = "PASS" if attack_results["C3"][sc.id] else "BLOCKED"
         c4_s = "PASS" if attack_results["C4"][sc.id] else "BLOCKED"
         cause = sc.defense_beating_mechanism or "Blocked by deterministic flow rule"
-        md.append(f"| `{sc.id}` | {sc.name} | {c0_s} | {c1_s} | {c2_s} | {c4_s} | {cause} |")
+        md.append(
+            f"| `{sc.id}` | {sc.name} | {c0_s} | {c1_s} | {c2_s} | {c3_s} | {c4_s} | {cause} |"
+        )
 
     md.extend(
         [
             "\n## Benign Workflows & False-Positive Stress Analysis (10 Tasks)\n",
-            "| ID | Task Name | C0 Blocked | C1 Blocked | C2 Blocked | C4 Blocked | Explanation |",
-            "|---|---|---|---|---|---|---|",
+            "| ID | Task Name | C0 Blocked | C1 Blocked | C2 Blocked | C3 Blocked | C4 Blocked | Explanation |",
+            "|---|---|---|---|---|---|---|---|",
         ]
     )
 
@@ -966,9 +970,10 @@ async def run_dev_matrix(output_path: Path) -> str:
         c0_b = "YES" if benign_results["C0"][sc.id] else "NO"
         c1_b = "YES" if benign_results["C1"][sc.id] else "NO"
         c2_b = "YES" if benign_results["C2"][sc.id] else "NO"
+        c3_b = "YES" if benign_results["C3"][sc.id] else "NO"
         c4_b = "YES" if benign_results["C4"][sc.id] else "NO"
         md.append(
-            f"| `{sc.id}` | {sc.name} | {c0_b} | {c1_b} | {c2_b} | {c4_b} | Allowed by domain allowlist / clean session |"
+            f"| `{sc.id}` | {sc.name} | {c0_b} | {c1_b} | {c2_b} | {c3_b} | {c4_b} | Allowed by domain allowlist / clean session |"
         )
 
     md.extend(
