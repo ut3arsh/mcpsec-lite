@@ -8,11 +8,13 @@ against example policy flow rules.
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 
 from mcpsec_core.flow import check_flow
 from mcpsec_core.models import SessionState, ToolCall
-from mcpsec_core.policy import load_policy
+from mcpsec_core.policy import Policy, load_policy
 
 TRUTH_TABLE_POLICY_YAML = """
 version: 1
@@ -54,7 +56,7 @@ flow_rules:
 
 
 @pytest.fixture(scope="module")
-def truth_policy():
+def truth_policy() -> Policy:
     policy, _, _ = load_policy(TRUTH_TABLE_POLICY_YAML)
     return policy
 
@@ -92,9 +94,9 @@ URL_VARIATIONS = [
 )
 @pytest.mark.parametrize("tool_id,cap,args", CAPABILITY_TOOLS)
 def test_truth_table_non_network_tools(
-    truth_policy, labels: frozenset[str], tool_id: str, cap: str, args: dict
-):
-    state = SessionState(session_id="test-session", taint=labels)
+    truth_policy: Policy, labels: frozenset[str], tool_id: str, cap: str, args: dict[str, Any]
+) -> None:
+    state = SessionState(session_id="test-session", taint=set(labels))
     call = ToolCall(
         call_id="call-1",
         session_id="test-session",
@@ -137,9 +139,9 @@ def test_truth_table_non_network_tools(
 )
 @pytest.mark.parametrize("var_name,args", URL_VARIATIONS)
 def test_truth_table_egress_with_unless_exemption(
-    truth_policy, labels: frozenset[str], var_name: str, args: dict
-):
-    state = SessionState(session_id="test-session", taint=labels)
+    truth_policy: Policy, labels: frozenset[str], var_name: str, args: dict[str, Any]
+) -> None:
+    state = SessionState(session_id="test-session", taint=set(labels))
     call = ToolCall(
         call_id="call-1",
         session_id="test-session",

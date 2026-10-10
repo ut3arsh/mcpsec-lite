@@ -16,8 +16,15 @@ from mcpsec_core.models import LatencyMs
 def test_proxy_server_advertises_only_tools_capability() -> None:
     """Verify that proxy Server instance advertises only tools capability (no prompts/resources/sampling)."""
     server = Server("mcpsec-proxy")
-    server.add_request_handler("tools/list", types.PaginatedRequestParams, lambda r, p: None)
-    server.add_request_handler("tools/call", types.CallToolRequestParams, lambda r, p: None)
+
+    async def dummy_list(r: object, p: types.PaginatedRequestParams) -> None:
+        return None
+
+    async def dummy_call(r: object, p: types.CallToolRequestParams) -> None:
+        return None
+
+    server.add_request_handler("tools/list", types.PaginatedRequestParams, dummy_list)
+    server.add_request_handler("tools/call", types.CallToolRequestParams, dummy_call)
 
     opts = NotificationOptions(tools_changed=True, prompts_changed=False, resources_changed=False)
     init_opts = server.create_initialization_options(notification_options=opts)

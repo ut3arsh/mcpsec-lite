@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import mcp.types as types
 import pytest
@@ -34,8 +35,10 @@ async def test_upstream_filesystem_native_root_confinement_refuses_out_of_root(
         name="read_file",
         arguments={"path": "hello.txt"},
     )
-    res_allowed: types.CallToolResult = await handler(None, req_allowed)
+    res_allowed: Any = await handler(None, req_allowed)  # type: ignore[arg-type]
+    assert isinstance(res_allowed, types.CallToolResult)
     assert not res_allowed.is_error
+    assert isinstance(res_allowed.content[0], types.TextContent)
     assert res_allowed.content[0].text == "hello world"
 
     # 2. Out-of-root escape attempt via absolute path -> refused by upstream itself
@@ -43,8 +46,10 @@ async def test_upstream_filesystem_native_root_confinement_refuses_out_of_root(
         name="read_file",
         arguments={"path": str(secret_file)},
     )
-    res_denied_abs: types.CallToolResult = await handler(None, req_denied_abs)
+    res_denied_abs: Any = await handler(None, req_denied_abs)  # type: ignore[arg-type]
+    assert isinstance(res_denied_abs, types.CallToolResult)
     assert res_denied_abs.is_error
+    assert isinstance(res_denied_abs.content[0], types.TextContent)
     assert "Access denied: path outside allowed root" in res_denied_abs.content[0].text
 
     # 3. Out-of-root escape attempt via traversal .. -> refused by upstream itself
@@ -52,6 +57,8 @@ async def test_upstream_filesystem_native_root_confinement_refuses_out_of_root(
         name="read_file",
         arguments={"path": "../secret_dir/secret.env"},
     )
-    res_denied_traversal: types.CallToolResult = await handler(None, req_denied_traversal)
+    res_denied_traversal: Any = await handler(None, req_denied_traversal)  # type: ignore[arg-type]
+    assert isinstance(res_denied_traversal, types.CallToolResult)
     assert res_denied_traversal.is_error
+    assert isinstance(res_denied_traversal.content[0], types.TextContent)
     assert "Access denied: path outside allowed root" in res_denied_traversal.content[0].text

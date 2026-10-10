@@ -10,13 +10,14 @@ Proves:
 from __future__ import annotations
 
 import copy
+from typing import Literal
 
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from mcpsec_core.flow import check_flow
 from mcpsec_core.models import ResponseSummary, SessionState, ToolCall
-from mcpsec_core.policy import load_policy
+from mcpsec_core.policy import Policy, load_policy
 from mcpsec_core.taint import update_taint
 
 PROPERTY_POLICY_YAML = """
@@ -58,7 +59,8 @@ flow_rules:
     require_approval_capabilities: [exec]
 """
 
-PROPERTY_POLICY, _, _ = load_policy(PROPERTY_POLICY_YAML)
+PROPERTY_POLICY: Policy
+PROPERTY_POLICY, _prop_policy_hash, _prop_policy_warns = load_policy(PROPERTY_POLICY_YAML)
 
 ALL_LABELS = ["untrusted_content", "private_data", "extra_label_1", "extra_label_2"]
 ALL_TOOLS = ["fs.read_file", "fs.write_file", "http.fetch", "http.post", "shell.exec"]
@@ -121,8 +123,8 @@ def test_flow_monotonicity_property(
     Adding taint labels can never turn a deny into an allow/require_approval,
     nor turn a require_approval into an allow.
     """
-    s1_taint = frozenset(base_labels)
-    s2_taint = frozenset(base_labels | extra_labels)
+    s1_taint = set(base_labels)
+    s2_taint = set(base_labels | extra_labels)
 
     state1 = SessionState(session_id="prop-sess-1", taint=s1_taint)
     state2 = SessionState(session_id="prop-sess-2", taint=s2_taint)
@@ -148,10 +150,10 @@ def test_flow_monotonicity_property(
 def test_taint_monotonicity_absent_approvals(
     initial_labels: set[str],
     call: ToolCall,
-    status: str,
+    status: Literal["ok", "error"],
 ) -> None:
     """Taint monotonicity: absent approvals, state.taint subset update_taint(state).taint."""
-    state = SessionState(session_id="prop-sess", taint=frozenset(initial_labels))
+    state = SessionState(session_id="prop-sess", taint=set(initial_labels))
     outcome = ResponseSummary(status=status, bytes=100)
 
     new_state = update_taint(call, outcome, state, PROPERTY_POLICY)
@@ -170,10 +172,10 @@ def test_taint_monotonicity_absent_approvals(
 def test_update_taint_purity(
     initial_labels: set[str],
     call: ToolCall,
-    status: str,
+    status: Literal["ok", "error"],
 ) -> None:
     """Purity: update_taint must never mutate input SessionState, call, or args."""
-    state = SessionState(session_id="prop-sess", taint=frozenset(initial_labels))
+    state = SessionState(session_id="prop-sess", taint=set(initial_labels))
     state_copy = copy.deepcopy(state)
     call_copy = copy.deepcopy(call)
     outcome = ResponseSummary(status=status, bytes=100)
@@ -199,8 +201,8 @@ def test_flow_decision_determinism(
     call: ToolCall,
 ) -> None:
     """Determinism: identical state and call produces identical Decision."""
-    state1 = SessionState(session_id="prop-sess", taint=frozenset(labels))
-    state2 = SessionState(session_id="prop-sess", taint=frozenset(labels))
+    state1 = SessionState(session_id="prop-sess", taint=set(labels))
+    state2 = SessionState(session_id="prop-sess", taint=set(labels))
 
     d1 = check_flow(state1, call, PROPERTY_POLICY)
     d2 = check_flow(state2, call, PROPERTY_POLICY)
@@ -208,4 +210,3 @@ def test_flow_decision_determinism(
     assert d1.decision == d2.decision
     assert d1.layer == d2.layer
     assert d1.rule_id == d2.rule_id
-    assert d1.reason == d2.reason

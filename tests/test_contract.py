@@ -33,7 +33,10 @@ def load_fixture_meta(server_name: str) -> dict[str, Any]:
     if not meta_path.exists():
         return {"verified": False, "status": "UNKNOWN"}
     with open(meta_path, encoding="utf-8") as f:
-        return json.load(f)
+        data: Any = json.load(f)
+        if isinstance(data, dict):
+            return dict(data)
+        return {"verified": False, "status": "UNKNOWN"}
 
 
 def test_filesystem_adapter_conformance_with_snapshot() -> None:

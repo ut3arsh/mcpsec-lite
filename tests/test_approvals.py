@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from typing import Any
 from unittest.mock import AsyncMock
 
 import mcp.types as types
@@ -266,7 +267,9 @@ approval:
         "http": AsyncMock(is_healthy=True),
     }
 
-    async def fake_call(server_name: str, tool_name: str, arguments: dict | None = None, **kwargs):
+    async def fake_call(
+        server_name: str, tool_name: str, arguments: dict[str, Any] | None = None, **kwargs: Any
+    ) -> types.CallToolResult:
         if server_name == "github":
             return types.CallToolResult(content=[types.TextContent(type="text", text="issue data")])
         elif server_name == "http":
@@ -310,4 +313,5 @@ approval:
     # 4. Await call result -> must succeed!
     res = await call_task
     assert not res.is_error
+    assert isinstance(res.content[0], types.TextContent)
     assert "elevated response" in res.content[0].text

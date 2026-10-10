@@ -14,7 +14,7 @@ from hypothesis.stateful import RuleBasedStateMachine, initialize, invariant, ru
 
 from mcpsec_core.flow import check_flow
 from mcpsec_core.models import ResponseSummary, SessionState, ToolCall
-from mcpsec_core.policy import load_policy
+from mcpsec_core.policy import Policy, load_policy
 from mcpsec_core.taint import update_taint
 
 STATEFUL_POLICY_YAML = """
@@ -62,7 +62,8 @@ approval:
   allow_clear: [untrusted_content]
 """
 
-STATEFUL_POLICY, _, _ = load_policy(STATEFUL_POLICY_YAML)
+STATEFUL_POLICY: Policy
+STATEFUL_POLICY, _policy_hash, _policy_warns = load_policy(STATEFUL_POLICY_YAML)
 
 
 class SessionSecurityStateMachine(RuleBasedStateMachine):
@@ -70,7 +71,7 @@ class SessionSecurityStateMachine(RuleBasedStateMachine):
 
     @initialize()
     def init_session(self) -> None:
-        self.session_state = SessionState(session_id="sm-session", taint=frozenset())
+        self.session_state = SessionState(session_id="sm-session", taint=set())
         self.call_history: list[tuple[ToolCall, str]] = []
 
     @rule(path=st.sampled_from(["/app/main.py", "/app/src/utils.py", "/docs/README.md"]))
@@ -174,8 +175,8 @@ class SessionSecurityStateMachine(RuleBasedStateMachine):
     @rule(label=st.sampled_from(["untrusted_content", "private_data"]))
     def clear_taint_approval(self, label: str) -> None:
         # According to policy, only untrusted_content is in allow_clear
-        if label in STATEFUL_POLICY.approval.allow_clear:
-            new_taint = frozenset(t for t in self.session_state.taint if t != label)
+        if STATEFUL_POLICY.approval and label in STATEFUL_POLICY.approval.allow_clear:
+            new_taint = set(t for t in self.session_state.taint if t != label)
             self.session_state = SessionState(
                 session_id=self.session_state.session_id,
                 taint=new_taint,

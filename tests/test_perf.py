@@ -208,7 +208,7 @@ def test_flow_and_taint_performance_budget(tmp_path: Path) -> None:
     yaml_str = generate_large_policy_yaml(base_posix, num_agents=100, rules_per_agent=10)
     policy, _, _ = load_policy(yaml_str)
 
-    state = SessionState(session_id="bench-sess", taint=frozenset(["untrusted_content"]))
+    state = SessionState(session_id="bench-sess", taint={"untrusted_content"})
     outcome = ResponseSummary(status="ok", bytes=512)
 
     # Warmup
