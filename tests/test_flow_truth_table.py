@@ -186,3 +186,159 @@ def test_truth_table_egress_with_unless_exemption(
         else:
             # Both fire; first rule in policy order is no-egress-untrusted
             assert decision.rule_id in ("no-egress-untrusted", "no-egress-private")
+
+
+def test_is_response_successful_variants() -> None:
+    from mcpsec_core.models import ResponseSummary
+    from mcpsec_core.taint import is_response_successful
+
+    assert not is_response_successful(None)
+    assert not is_response_successful(ResponseSummary(status="error", bytes=0))
+    assert is_response_successful(ResponseSummary(status="ok", bytes=10))
+    assert not is_response_successful({"is_error": True})
+    assert not is_response_successful({"isError": True})
+    assert not is_response_successful({"status": "error"})
+    assert is_response_successful({"status": "success"})
+    assert not is_response_successful(False)
+    assert is_response_successful(True)
+    assert is_response_successful("plain text")
+
+
+def test_update_taint_argument_matching_and_fail_closed_branches() -> None:
+    from mcpsec_core.policy import load_policy
+    from mcpsec_core.taint import update_taint
+
+    policy_yaml = """
+version: 1
+mode: enforce
+capabilities:
+  fs.read: [read]
+  net.fetch: [network_read]
+policies:
+  - agent: "*"
+    tools:
+      fs.read: {}
+      net.fetch: {}
+taint_sources:
+  private_data:
+    - { tool: fs.read, args: { path: ["/secret/**"] } }
+  untrusted_content:
+    - { tool: net.fetch, args: { url: ["*.untrusted.com"] } }
+flow_rules: []
+"""
+    pol, _, _ = load_policy(policy_yaml)
+    init_state = SessionState(session_id="s1")
+
+    # 1. Unsuccessful response -> state unchanged
+    s_err = update_taint(
+        ToolCall(
+            call_id="c1",
+            session_id="s1",
+            agent_id="a",
+            server="fs",
+            tool="read",
+            args={"path": "/secret/a"},
+        ),
+        {"is_error": True},
+        init_state,
+        pol,
+    )
+    assert len(s_err.taint) == 0
+
+    # 2. None policy -> state unchanged
+    s_no_pol = update_taint(
+        ToolCall(
+            call_id="c1",
+            session_id="s1",
+            agent_id="a",
+            server="fs",
+            tool="read",
+            args={"path": "/secret/a"},
+        ),
+        {"is_error": False},
+        init_state,
+        None,
+    )
+    assert len(s_no_pol.taint) == 0
+
+    # 3. Missing arg for private_data -> fail closed toward tainting
+    s_priv_missing = update_taint(
+        ToolCall(call_id="c1", session_id="s1", agent_id="a", server="fs", tool="read", args={}),
+        {"is_error": False},
+        init_state,
+        pol,
+    )
+    assert "private_data" in s_priv_missing.taint
+
+    # 4. Non-string arg for private_data -> fail closed toward tainting
+    s_priv_non_str = update_taint(
+        ToolCall(
+            call_id="c1",
+            session_id="s1",
+            agent_id="a",
+            server="fs",
+            tool="read",
+            args={"path": 12345},
+        ),
+        {"is_error": False},
+        init_state,
+        pol,
+    )
+    assert "private_data" in s_priv_non_str.taint
+
+    # 5. Missing arg for untrusted_content -> non-private label does not match -> not tainted
+    s_untr_missing = update_taint(
+        ToolCall(call_id="c2", session_id="s1", agent_id="a", server="net", tool="fetch", args={}),
+        {"is_error": False},
+        init_state,
+        pol,
+    )
+    assert "untrusted_content" not in s_untr_missing.taint
+
+    # 6. Non-string arg for untrusted_content -> not tainted
+    s_untr_non_str = update_taint(
+        ToolCall(
+            call_id="c2",
+            session_id="s1",
+            agent_id="a",
+            server="net",
+            tool="fetch",
+            args={"url": 999},
+        ),
+        {"is_error": False},
+        init_state,
+        pol,
+    )
+    assert "untrusted_content" not in s_untr_non_str.taint
+
+    # 7. Path normalization exception for private_data -> fail closed toward tainting
+    s_priv_exc = update_taint(
+        ToolCall(
+            call_id="c1",
+            session_id="s1",
+            agent_id="a",
+            server="fs",
+            tool="read",
+            args={"path": "\x00invalid_null_path"},
+        ),
+        {"is_error": False},
+        init_state,
+        pol,
+    )
+    assert "private_data" in s_priv_exc.taint
+
+    # 8. Path normalization exception for untrusted_content -> not tainted
+    s_untr_exc = update_taint(
+        ToolCall(
+            call_id="c2",
+            session_id="s1",
+            agent_id="a",
+            server="net",
+            tool="fetch",
+            args={"url": "\x00invalid_null_url"},
+        ),
+        {"is_error": False},
+        init_state,
+        pol,
+    )
+    assert "untrusted_content" not in s_untr_exc.taint

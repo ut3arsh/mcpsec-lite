@@ -362,3 +362,19 @@ approval:
     assert not res.is_error
     assert isinstance(res.content[0], types.TextContent)
     assert "elevated response" in res.content[0].text
+
+
+def test_approval_manager_sync_handles_blank_and_corrupt_lines(tmp_path: Path) -> None:
+    log_file = tmp_path / "corrupt_approvals.jsonl"
+    log_file.write_text(
+        "\n\n{invalid json\n"
+        '{"event": "requested", "call_id": "c1", "session_id": "s1", "agent_id": "a", "server": "s", "tool": "t", "args": {}, "capabilities": [], "taint_state": [], "rule_id": "r"}\n'
+        "\n"
+        '{"event": "invalid_no_call_id"}\n'
+        '{"event": "approved", "call_id": "c1", "operator": "op"}\n',
+        encoding="utf-8",
+    )
+    manager = ApprovalManager(log_path=log_file)
+    apprs = manager.get_all_approvals()
+    assert "c1" in apprs
+    assert apprs["c1"].status == "approved"

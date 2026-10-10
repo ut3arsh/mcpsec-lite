@@ -80,6 +80,12 @@ time.sleep(60)
     kill_process_tree(parent_pid)
     time.sleep(0.5)
 
+    if sys.platform != "win32":
+        try:
+            parent_proc.poll()
+        except Exception:
+            pass
+
     # Assert no descendants survive
     assert not _is_pid_alive(parent_pid), (
         f"Parent process PID {parent_pid} survived kill_process_tree"
