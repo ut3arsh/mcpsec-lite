@@ -156,7 +156,10 @@ mypy .
 python benchmark/measure_overhead.py
 ```
 
-## Security
+## Security & Limitations
+- **Fail-Closed Default:** Any unrecognized tool call, invalid argument format, or parsing error is rejected with default-deny semantics.
+- **Protocol Surface (v1):** The proxy advertises and supports only the MCP `tools` capability (`listChanged=True`). Non-tool surfaces (`prompts`, `resources`) and server-initiated requests (`sampling/createMessage`, `elicitation`, `roots/list`) are rejected and audited as `ERR_UNSUPPORTED_SURFACE`.
+- **Generic Agent Errors:** In `enforce` mode, policy denials return generic messages to prevent information leakage to confusable models.
 
 Report vulnerabilities in this project privately (contact and `SECURITY.md` to be added before the first release).
 

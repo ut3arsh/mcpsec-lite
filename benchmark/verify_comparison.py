@@ -14,6 +14,7 @@ from mcp.server.stdio import SessionMessage  # type: ignore[attr-defined]
 
 from mcpsec_core.audit import AuditLogger
 from proxy.session import ProxySession
+from proxy.supervisor import UpstreamManager
 from tests.test_server import create_test_fs_server
 
 
@@ -85,11 +86,24 @@ async def main() -> None:
 
             async with ClientSession(up_s2c_r, up_c2s_w) as upstream_client:
                 await upstream_client.initialize()
+                from unittest.mock import AsyncMock
+
+                tools_res = await upstream_client.list_tools()
+                fs_proc = AsyncMock()
+                fs_proc.is_healthy = True
+                fs_proc.raw_tools = list(tools_res.tools)
+                fs_proc.exposed_tools = list(tools_res.tools)
+
+                upstream_mgr = AsyncMock(spec=UpstreamManager)
+                upstream_mgr.servers = {"filesystem": fs_proc}
+                upstream_mgr.call_tool = lambda srv, tool, args: upstream_client.call_tool(
+                    tool, args or {}
+                )
+
                 proxy_session = ProxySession(
                     session_id="test-session",
-                    upstream_session=upstream_client,
+                    upstream_manager=upstream_mgr,
                     audit_logger=audit_logger,
-                    server_name="filesystem",
                 )
                 proxy_session.start()
 
