@@ -97,18 +97,19 @@ class ProxySession:
 
         # Initialize PinStore
         if pin_store is not None:
-            self.pin_store = pin_store
+            self.pin_store: PinStore | None = pin_store
         elif (
             self.policy_data is not None
             and hasattr(self.policy_data, "pinning")
-            and self.policy_data.pinning
+            and self.policy_data.pinning is not None
             and getattr(self.policy_data.pinning, "store", None)
         ):
             self.pin_store = PinStore(Path(self.policy_data.pinning.store))
         else:
-            self.pin_store = PinStore("./pins.json")
+            self.pin_store = None
 
-        self.pin_store.load(fail_closed=(self.mode == "enforce"))
+        if self.pin_store is not None:
+            self.pin_store.load(fail_closed=(self.mode == "enforce"))
 
         # Single SessionState spanning all upstreams
         self.session_state = SessionState(
@@ -184,9 +185,14 @@ class ProxySession:
         if (
             self.policy_data is not None
             and hasattr(self.policy_data, "pinning")
-            and self.policy_data.pinning
+            and self.policy_data.pinning is not None
         ):
             pinning_mode = getattr(self.policy_data.pinning, "mode", "audit")
+
+        if self.pin_store is None:
+            if pinning_mode == "strict":
+                return types.ListToolsResult(tools=[])
+            return types.ListToolsResult(tools=list(all_tools))
 
         visible_tools: list[types.Tool] = []
         for t in all_tools:
