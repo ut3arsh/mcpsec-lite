@@ -153,3 +153,36 @@ Measured via `tests/test_perf.py` on a policy containing **1,000 rules across 10
    - Benchmarking false positives on benign multi-upstream sessions and calibrating allowlists/flow rules.
 3. **Subprocess Pipe Buffer Deadlocks under Heavy Concurrent Streaming**:
    - Ensuring bounded stdio streaming, explicit per-call timeouts, and asynchronous non-blocking drains.
+
+---
+
+## Week 4 & Week 5: Taint Tracking, Flow Rules, Tool Pinning, Advisory Detectors & Red-Team Benchmark
+
+### Week 5 Decisions & Applied Spec Patches
+
+1. **[x Applied] Removal of Path Resolution LRU Cache (ADR-015)**:
+   - *Decision*: Removed all LRU caching on path canonicalization (`_fast_realpath`). Every path check resolves symlinks/junctions dynamically from the OS filesystem table to prevent TOCTOU symlink retargeting escapes within the cache window.
+
+2. **[x Applied] Tool-Description Pinning (ADR-016 & `docs/policy_schema.md` §7)**:
+   - *Decision*: Tool definition hashes are calculated over the full model-visible definition (`name`, `description`, `inputSchema`).
+   - *Strict Mode*: In `mode: strict`, unpinned or modified tools are completely hidden from `tools/list` and rejected with `ERR_UNPINNED_TOOL` / `ERR_TOOL_HASH_MISMATCH` if invoked directly.
+   - *Atomic Storage*: `PinStore` updates write to a temporary file in the same filesystem directory and rename atomically, utilizing cross-platform advisory locking (`msvcrt` on Windows, `fcntl` on POSIX).
+   - *CLI Tool*: Added `mcpsec-pin` CLI supporting `list`, `diff`, and `approve`.
+   - *Unenforced Feature Guard*: Removed `ERR_NOT_YET_ENFORCED` since pinning is now fully implemented and enforced.
+
+3. **[x Applied] Advisory Detectors (ADR-003 & `mcpsec_core/detectors.py`)**:
+   - *Decision*: Advisory detectors scan tool arguments and upstream responses for secrets and prompt injection candidates without mutating or blocking policy decisions.
+   - *Privacy & ReDoS*: Responses are scanned purely in memory with a 256 KiB cap and bounded regex patterns (`FROZEN-CANDIDATE`). Responses are never logged to disk or audit logs.
+
+4. **[x Applied] Red-Team Development Benchmark Suite (`benchmark/dev/benchmark_dev.py`)**:
+   - *Decision*: Evaluated 22 attack scenarios and 10 benign scenarios driven through `ProxySession` end-to-end against 5 configurations (C0..C4).
+   - *Results*:
+     - **C0 (Baseline):** 22/22 (100.0%) attacks succeeded, 0/10 benign blocked (0.0% FPR).
+     - **C1 (Static Policy):** 21/22 (95.5%) attacks succeeded, 1/10 benign blocked (10.0% FPR).
+     - **C2 (Full Firewall):** 9/22 (40.9%) attacks succeeded, 3/10 benign blocked (30.0% FPR).
+     - **C4 (Strict Pinning):** Blocks tool description mutations (ATTACK-22) while preserving C2 protection.
+   - *Defense-beating Analysis*: The 9 attacks bypassing C2 operate at defined architectural boundaries: cross-session replay, data laundering through unmonitored file paths, query smuggling on read-only tools, approval fatigue, unless-exempt domains, HTTP 302 redirects, and TOCTOU races.
+
+5. **[x Applied] Benchmark Runner Skeleton (`benchmark/runner.py`)**:
+   - *Decision*: Pure-function `wilson_interval(k, n)` calculating exact score intervals for ASR and FPR. Config matrix YAMLs (`C0.yaml` to `C4.yaml`) with structured `manifest.json`, `trials.csv`, and `summary.csv` outputs.
+

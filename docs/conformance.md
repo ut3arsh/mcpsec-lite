@@ -27,6 +27,7 @@ This document maps normative requirements (`MUST`, `MUST NOT`, `SHOULD`, `REQUIR
 | **§5 Flow Engine** | Flow rules evaluate `deny > require_approval > allow` with `unless` domain exemption | `check_flow` in `mcpsec_core/flow.py` | [`tests/test_flow_truth_table.py`](file:///c:/Users/BIT%20PATNA/ai-agent-firewall/tests/test_flow_truth_table.py), [`tests/test_flow_proxy_e2e.py`](file:///c:/Users/BIT%20PATNA/ai-agent-firewall/tests/test_flow_proxy_e2e.py) |
 | **§5.1 Network Egress Semantics** | Any tool transmitting caller data outside trust boundary carries `egress` (fetch carries `[network_read, egress]`) | `mcpsec_core/adapters.py` & Policy capabilities | [`tests/test_flow_proxy_e2e.py`](file:///c:/Users/BIT%20PATNA/ai-agent-firewall/tests/test_flow_proxy_e2e.py) |
 | **§6 Generic Error Responses** | Enforce denials return generic `"Denied by mcpsec policy"` to agent | `ProxySession.call_tool` | [`tests/test_proxy_policy.py`](file:///c:/Users/BIT%20PATNA/ai-agent-firewall/tests/test_proxy_policy.py), [`tests/test_flow_proxy_e2e.py`](file:///c:/Users/BIT%20PATNA/ai-agent-firewall/tests/test_flow_proxy_e2e.py) |
+| **§7 Tool-Description Pinning** | Pin store hashing with strict mode masking from `tools/list` and call rejection | `PinStore`, `ProxySession` | [`tests/test_pinning.py`](file:///c:/Users/BIT%20PATNA/ai-agent-firewall/tests/test_pinning.py) |
 
 ---
 
@@ -35,7 +36,7 @@ This document maps normative requirements (`MUST`, `MUST NOT`, `SHOULD`, `REQUIR
 | Spec Section | Normative Requirement | Implementation | Automated Test Case |
 |---|---|---|---|
 | **§2 Event Types** | Valid JSONL events: `policy_loaded`, `session_start`, `tool_call`, `session_end` | `AuditLogger` in `mcpsec_core/audit.py` | [`tests/test_audit.py::test_all_audit_event_types_schema_conformance`](file:///c:/Users/BIT%20PATNA/ai-agent-firewall/tests/test_audit.py) |
-| **§3.1 Pin Status Enum** | `pin_status` enum must be one of `pinned \| unpinned \| changed \| unchecked` | `ToolCallEvent.pin_status` in `mcpsec_core/models.py` | [`tests/test_audit.py::test_pin_status_enum_matches_schema_doc`](file:///c:/Users/BIT%20PATNA/ai-agent-firewall/tests/test_audit.py) |
+| **§3.1 Pin Status Enum** | `pin_status` enum must be one of `pinned \| unpinned \| changed \| unchecked` | `ToolCallEvent.pin_status` in `mcpsec_core/models.py` | [`tests/test_audit.py::test_pin_status_enum_matches_schema_doc`](file:///c:/Users/BIT%20PATNA/ai-agent-firewall/tests/test_audit.py), [`tests/test_pinning.py`](file:///c:/Users/BIT%20PATNA/ai-agent-firewall/tests/test_pinning.py) |
 | **§3.2 Redaction Modes** | Arguments redacted per policy (`redacted`, `full`, `hash_only`) | `redact_args` in `mcpsec_core/redaction.py` | [`tests/test_redaction.py`](file:///c:/Users/BIT%20PATNA/ai-agent-firewall/tests/test_redaction.py) |
 | **§3.3 Latency Breakdown** | Tool calls record `latency_ms.proxy` and `latency_ms.upstream` | `ProxySession.call_tool` | [`tests/test_proxy.py::test_proxy_filesystem_end_to_end`](file:///c:/Users/BIT%20PATNA/ai-agent-firewall/tests/test_proxy.py) |
 | **§4 Session Lifecycle** | Monotonic sequence IDs and session state tracking | `SessionState`, `AuditLogger` | [`tests/test_audit.py`](file:///c:/Users/BIT%20PATNA/ai-agent-firewall/tests/test_audit.py) |
@@ -53,8 +54,9 @@ This document maps normative requirements (`MUST`, `MUST NOT`, `SHOULD`, `REQUIR
 | **Subprocess Tree Hygiene** | `kill_process_tree` terminates entire process hierarchy (Windows `/T /F`, POSIX process groups) | `kill_process_tree` in `proxy/supervisor.py` | [`tests/test_subprocess_hygiene.py::test_kill_process_tree_terminates_all_descendants`](file:///c:/Users/BIT%20PATNA/ai-agent-firewall/tests/test_subprocess_hygiene.py) |
 | **Environment Isolation** | Upstream environment sanitized, stripping parent process secrets | `sanitize_upstream_env` in `proxy/supervisor.py` | [`tests/test_supervisor_unit.py::test_sanitize_upstream_env_strips_sensitive_variables`](file:///c:/Users/BIT%20PATNA/ai-agent-firewall/tests/test_supervisor_unit.py) |
 | **Non-Required Degradation** | Non-required upstream failure logs warning without crashing healthy upstreams | `UpstreamManager.start_all` | [`tests/test_multi_upstream.py::test_non_required_upstream_degradation`](file:///c:/Users/BIT%20PATNA/ai-agent-firewall/tests/test_multi_upstream.py) |
-| **Unenforced Feature Guard** | Startup refuses `mode: enforce` if un-enforced features configured (`ERR_NOT_YET_ENFORCED`) | `load_policy(..., check_unenforced_guards=True)` | [`tests/test_multi_upstream.py::test_unenforced_policy_guard_fails_closed_in_enforce_mode`](file:///c:/Users/BIT%20PATNA/ai-agent-firewall/tests/test_multi_upstream.py) |
+| **Advisory Detectors (ADR-003)** | Zero-decision-mutation secret and prompt injection scanner with 256 KiB cap and ReDoS guard | `DetectorEngine` in `mcpsec_core/detectors.py` | [`tests/test_detectors.py`](file:///c:/Users/BIT%20PATNA/ai-agent-firewall/tests/test_detectors.py) |
 | **TOCTOU Defense-in-Depth** | Upstream native directory confinement prevents escape if proxy bypassed | Upstream server directory roots | [`tests/test_toctou_defense.py`](file:///c:/Users/BIT%20PATNA/ai-agent-firewall/tests/test_toctou_defense.py) |
+| **Statistical Benchmark Runner** | Evaluation harness with Wilson score intervals and trial recording | `BenchmarkRunner`, `wilson_interval` | [`tests/test_benchmark_runner.py`](file:///c:/Users/BIT%20PATNA/ai-agent-firewall/tests/test_benchmark_runner.py) |
 
 ---
 
@@ -63,4 +65,5 @@ This document maps normative requirements (`MUST`, `MUST NOT`, `SHOULD`, `REQUIR
 1. **HTTP Redirects:** Policy evaluates the initial URL host; if an upstream tool follows HTTP 30x redirects to unlisted IPs, domain allowlists do not intercept subsequent hops (addressed via network-level egress proxy in Week 6; see `docs/egress_guard_design.md`).
 2. **GitHub Parameter Encoding:** While `fetch` carries `egress`, GitHub read tools (e.g. `github.get_issue`) can theoretically encode data in `owner` or `repo` arguments (accepted v1 limitation).
 3. **Coarse Session Taint:** Taint is tracked per session rather than per-argument provenance.
+
 
