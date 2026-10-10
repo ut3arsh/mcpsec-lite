@@ -14,6 +14,7 @@ import mcp.types as types
 from mcpsec_core.adapters import ToolNameMappingError, decode_tool_name
 from mcpsec_core.approvals import ApprovalManager
 from mcpsec_core.audit import AuditLogger
+from mcpsec_core.detectors import scan_arguments, scan_response
 from mcpsec_core.flow import check_flow
 from mcpsec_core.models import (
     LatencyMs,
@@ -454,6 +455,16 @@ class ProxySession:
             else:
                 effective_decision = "blocked"
 
+        flags: list[str] = []
+        risk_score: float | None = None
+        if (
+            self.policy_data is not None
+            and hasattr(self.policy_data, "detectors")
+            and self.policy_data.detectors
+        ):
+            if getattr(self.policy_data.detectors, "secrets", False):
+                flags.extend(scan_arguments(raw_args))
+
         # If blocked in enforce mode: return generic error to agent and record audit event
         if effective_decision == "blocked":
             t_post_start = time.perf_counter()
@@ -476,6 +487,8 @@ class ProxySession:
                 decision_reason=decision_reason,
                 rule_id=rule_id,
                 pin_status=pin_status,
+                flags=flags,
+                risk_score=risk_score,
                 latency_ms=LatencyMs(proxy=round(total_proxy_ms, 3), upstream=None),
                 taint_before=taint_before,
                 taint_after=taint_before,
@@ -516,6 +529,17 @@ class ProxySession:
             content_bytes = compute_content_bytes(upstream_result.content)
             status_str: Literal["ok", "error"] = "error" if upstream_result.is_error else "ok"
             response_summary = ResponseSummary(status=status_str, bytes=content_bytes)
+
+            # Advisory response scan in memory (never logged)
+            if (
+                self.policy_data is not None
+                and hasattr(self.policy_data, "detectors")
+                and self.policy_data.detectors
+            ):
+                if getattr(self.policy_data.detectors, "injection_heuristics", False):
+                    resp_flags, resp_score = scan_response(upstream_result.content)
+                    flags.extend(resp_flags)
+                    risk_score = resp_score
         else:
             response_summary = None
 
@@ -539,6 +563,8 @@ class ProxySession:
             decision_reason=decision_reason,
             rule_id=rule_id,
             pin_status=pin_status,
+            flags=flags,
+            risk_score=risk_score,
             latency_ms=LatencyMs(
                 proxy=round(total_proxy_ms, 3),
                 upstream=round(upstream_duration_ms, 3),
