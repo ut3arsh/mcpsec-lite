@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -111,7 +112,7 @@ def test_path_symlink_escape_resolution(tmp_path: Path) -> None:
 
 def test_path_junction_escape_resolution_windows(tmp_path: Path) -> None:
     """Directory junction escape test on Windows (runs without elevated privilege)."""
-    if os.name != "nt":
+    if sys.platform != "win32":
         pytest.skip("Windows directory junctions are Windows-specific")
 
     import _winapi
@@ -148,7 +149,7 @@ def test_path_retargeting_symlink_or_junction_re_resolves_and_denies(tmp_path: P
 
     link_path = sandbox / "dyn_link"
 
-    if os.name == "nt":
+    if sys.platform == "win32":
         import _winapi
 
         _winapi.CreateJunction(str(inside), str(link_path))
@@ -165,7 +166,7 @@ def test_path_retargeting_symlink_or_junction_re_resolves_and_denies(tmp_path: P
     assert match_path(norm1, [sandbox_pattern])
 
     # 2. Retarget link to outside sandbox
-    if os.name == "nt":
+    if sys.platform == "win32":
         import _winapi
 
         os.rmdir(str(link_path))

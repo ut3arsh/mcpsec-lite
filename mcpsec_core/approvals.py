@@ -12,6 +12,7 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import sys
 import threading
 import time
 from collections.abc import Iterator
@@ -22,7 +23,7 @@ from typing import Any, Literal
 
 _APPROVAL_PROCESS_LOCK = threading.RLock()
 
-if os.name == "nt":
+if sys.platform == "win32":
     import msvcrt
 
     @contextlib.contextmanager
@@ -58,11 +59,11 @@ else:
         fd = file_obj.fileno()
         with _APPROVAL_PROCESS_LOCK:
             try:
-                fcntl.flock(fd, fcntl.LOCK_EX)  # type: ignore[attr-defined]
+                fcntl.flock(fd, fcntl.LOCK_EX)
                 yield
             finally:
                 try:
-                    fcntl.flock(fd, fcntl.LOCK_UN)  # type: ignore[attr-defined]
+                    fcntl.flock(fd, fcntl.LOCK_UN)
                 except Exception:
                     pass
 

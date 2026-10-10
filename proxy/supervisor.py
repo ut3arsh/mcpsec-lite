@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sys
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -78,7 +79,7 @@ def kill_process_tree(pid: int) -> None:
     """Kill entire process tree on Windows and POSIX to avoid orphan children."""
     if pid <= 0:
         return
-    if os.name == "nt":
+    if sys.platform == "win32":
         import subprocess
 
         try:
@@ -93,10 +94,10 @@ def kill_process_tree(pid: int) -> None:
         import signal
 
         try:
-            os.killpg(os.getpgid(pid), signal.SIGKILL)  # type: ignore[attr-defined]
+            os.killpg(os.getpgid(pid), signal.SIGKILL)
         except Exception:
             try:
-                os.kill(pid, signal.SIGKILL)  # type: ignore[attr-defined]
+                os.kill(pid, signal.SIGKILL)
             except Exception:
                 pass
 
