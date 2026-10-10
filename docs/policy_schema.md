@@ -81,7 +81,7 @@ policies:
 - `{}` means allowed with no argument constraints.
 
 ### 3.1 Argument matching rules
-- **Paths:** the argument is normalized (expand `~`, resolve `..`, resolve symlinks, junctions, and parent directories for non-existent write targets) **before** matching against globs. Match failure ⇒ deny. Globs: `*` (no `/`), `**` (any depth).
+- **Paths:** the argument is normalized (expand `~`, resolve `..`, resolve symlinks, junctions, and parent directories for non-existent write targets) **before** matching against globs. Match failure ⇒ deny. Globs: `*` (no `/`), `**` (any depth). Note that `X/**` matches children strictly underneath directory `X` (e.g., `X/file.txt`, `X/sub/file.txt`), but does NOT match `X` itself. To allow directory inspection tools (such as `list_directory`) operating on the directory root, policies must explicitly include the root pattern (e.g., `["X", "X/**", "**/X", "**/X/**"]`).
 - **Unicode & URL encoding:** Path arguments MUST undergo Unicode NFC normalization before canonicalization. Implementations MUST NOT URL-decode file path arguments before evaluating allowlists.
 - **Windows boundaries:** On Windows, implementations MUST reject UNC paths (`\\\\server\\share`), Win32 device namespace paths (`\\\\?\\`, `\\\\.\\`), Alternate Data Streams (`:`), and legacy DOS reserved device names (`CON`, `PRN`, `AUX`, `NUL`, `COM1-9`, `LPT1-9`).
 - **Domains:** parsed from the URL host, lowercased. `example.com` matches exactly; `*.example.com` matches subdomains only (not the apex or look-alike domains). Non-HTTP(S) schemes and URLs with userinfo (`@`) are denied. Redirects are not followed by the proxy; servers that follow redirects are a documented gap.

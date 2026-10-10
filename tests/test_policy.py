@@ -509,3 +509,70 @@ policies:
     dec_userinfo = check_policy(userinfo_call, policy)
     assert dec_userinfo.decision == "deny"
     assert "security violation" in dec_userinfo.reason
+
+
+def test_path_allowlist_directory_root_and_glob_distinction(tmp_path: Path) -> None:
+    """Verify that 'sandbox/**' matches children only, whereas ['sandbox', 'sandbox/**'] allows the root directory too."""
+    sandbox = (tmp_path / "sandbox").resolve()
+    sandbox.mkdir()
+    sub_file = sandbox / "main.py"
+    sub_file.write_text("print('hello')", encoding="utf-8")
+
+    # 1. Glob-only policy (sandbox/**)
+    glob_only_yaml = f"""
+version: 1
+mode: enforce
+capabilities:
+  fs.list_directory: [read]
+  fs.read_file:      [read]
+policies:
+  - agent: "*"
+    tools:
+      fs.list_directory: {{ path_allowlist: ["{sandbox.as_posix()}/**"] }}
+      fs.read_file:      {{ path_allowlist: ["{sandbox.as_posix()}/**"] }}
+"""
+    pol_glob_only, _, _ = load_policy(glob_only_yaml)
+
+    # Calling list_directory on the root sandbox directory is DENIED
+    root_call = ToolCall(
+        call_id="c1",
+        session_id="s1",
+        agent_id="test-agent",
+        server="fs",
+        tool="list_directory",
+        args={"path": str(sandbox)},
+    )
+    dec_root = check_policy(root_call, pol_glob_only)
+    assert dec_root.decision == "deny"
+    assert "path not in allowlist" in dec_root.reason
+
+    # Reading file inside sandbox is ALLOWED
+    file_call = ToolCall(
+        call_id="c2",
+        session_id="s1",
+        agent_id="test-agent",
+        server="fs",
+        tool="read_file",
+        args={"path": str(sub_file)},
+    )
+    assert check_policy(file_call, pol_glob_only).decision == "allow"
+
+    # 2. Root + glob policy (sandbox, sandbox/**)
+    root_and_glob_yaml = f"""
+version: 1
+mode: enforce
+capabilities:
+  fs.list_directory: [read]
+  fs.read_file:      [read]
+policies:
+  - agent: "*"
+    tools:
+      fs.list_directory: {{ path_allowlist: ["{sandbox.as_posix()}", "{sandbox.as_posix()}/**"] }}
+      fs.read_file:      {{ path_allowlist: ["{sandbox.as_posix()}", "{sandbox.as_posix()}/**"] }}
+"""
+    pol_root_and_glob, _, _ = load_policy(root_and_glob_yaml)
+
+    # Calling list_directory on root is now ALLOWED
+    assert check_policy(root_call, pol_root_and_glob).decision == "allow"
+    # Reading file is also ALLOWED
+    assert check_policy(file_call, pol_root_and_glob).decision == "allow"

@@ -20,12 +20,12 @@ capabilities:
 policies:
   - agent: "*"
     tools:
-      fs.read_file:                { path_allowlist: ["sandbox/**", "**/sandbox/**"] }
-      fs.write_file:               { path_allowlist: ["sandbox/**", "**/sandbox/**"] }
-      fs.list_directory:           { path_allowlist: ["sandbox/**", "**/sandbox/**"] }
-      filesystem.read_file:        { path_allowlist: ["sandbox/**", "**/sandbox/**"] }
-      filesystem.write_file:       { path_allowlist: ["sandbox/**", "**/sandbox/**"] }
-      filesystem.list_directory:   { path_allowlist: ["sandbox/**", "**/sandbox/**"] }
+      fs.read_file:                { path_allowlist: ["sandbox", "sandbox/**", "**/sandbox", "**/sandbox/**"] }
+      fs.write_file:               { path_allowlist: ["sandbox", "sandbox/**", "**/sandbox", "**/sandbox/**"] }
+      fs.list_directory:           { path_allowlist: ["sandbox", "sandbox/**", "**/sandbox", "**/sandbox/**"] }
+      filesystem.read_file:        { path_allowlist: ["sandbox", "sandbox/**", "**/sandbox", "**/sandbox/**"] }
+      filesystem.write_file:       { path_allowlist: ["sandbox", "sandbox/**", "**/sandbox", "**/sandbox/**"] }
+      filesystem.list_directory:   { path_allowlist: ["sandbox", "sandbox/**", "**/sandbox", "**/sandbox/**"] }
       fetch.fetch:                 {}
       http.fetch:                  {}
       github.get_issue:            {}
