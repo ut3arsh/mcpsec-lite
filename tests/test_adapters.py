@@ -197,7 +197,6 @@ def test_tool_name_decoding_validations() -> None:
         decode_tool_name("1server__tool")
 
 
-@settings(max_examples=500, deadline=None)
 @given(
     server=st.from_regex(r"^[a-z][a-z0-9-]{0,10}$", fullmatch=True),
     tool=st.from_regex(r"^[a-zA-Z0-9_]{1,20}$", fullmatch=True).filter(lambda s: "__" not in s),

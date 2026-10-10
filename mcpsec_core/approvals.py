@@ -31,14 +31,14 @@ if os.name == "nt":
         fd = file_obj.fileno()
         with _APPROVAL_PROCESS_LOCK:
             locked = False
-            for _ in range(200):
+            for _ in range(500):
                 try:
                     os.lseek(fd, 0, os.SEEK_SET)
                     msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
                     locked = True
                     break
                 except OSError:
-                    time.sleep(0.005)
+                    time.sleep(0.001)
             try:
                 yield
             finally:

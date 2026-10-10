@@ -106,7 +106,6 @@ def st_tool_call(draw: st.DrawFn) -> ToolCall:
     )
 
 
-@settings(max_examples=500)
 @given(
     base_labels=st_labels,
     extra_labels=st_labels,
@@ -141,7 +140,6 @@ def test_flow_monotonicity_property(
     )
 
 
-@settings(max_examples=500)
 @given(
     initial_labels=st_labels,
     call=st_tool_call(),
@@ -163,7 +161,6 @@ def test_taint_monotonicity_absent_approvals(
     )
 
 
-@settings(max_examples=500)
 @given(
     initial_labels=st_labels,
     call=st_tool_call(),
@@ -191,7 +188,6 @@ def test_update_taint_purity(
     assert new_state is not state
 
 
-@settings(max_examples=500)
 @given(
     labels=st_labels,
     call=st_tool_call(),

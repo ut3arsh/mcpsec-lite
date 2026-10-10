@@ -43,14 +43,14 @@ if os.name == "nt":
         fd = file_obj.fileno()
         with _PIN_PROCESS_LOCK:
             locked = False
-            for _ in range(200):
+            for _ in range(500):
                 try:
                     os.lseek(fd, 0, os.SEEK_SET)
                     msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
                     locked = True
                     break
                 except OSError:
-                    time.sleep(0.005)
+                    time.sleep(0.001)
             try:
                 yield
             finally:
@@ -224,6 +224,80 @@ class PinStore:
         self.schema_version = 1
         self.servers: dict[str, ServerPin] = {}
 
+    def _load_unlocked(self, fail_closed: bool = True) -> None:
+        """Internal load and parse from disk without acquiring lock."""
+        if not self.store_path.exists():
+            self.servers = {}
+            return
+
+        try:
+            with open(self.store_path, "rb") as f:
+                data = json.loads(f.read().decode("utf-8"))
+        except Exception as e:
+            if fail_closed:
+                raise PinStoreError(
+                    f"Pin store file corrupt or unreadable at {self.store_path}: {e}"
+                ) from e
+            self.servers = {}
+            return
+
+        if not isinstance(data, dict):
+            if fail_closed:
+                raise PinStoreError(
+                    f"Invalid pin store root: expected dict, got {type(data).__name__}"
+                )
+            self.servers = {}
+            return
+
+        version = data.get("schema_version")
+        if version != self.schema_version:
+            if fail_closed:
+                raise PinStoreError(
+                    f"Unsupported pin store schema_version: {version} (expected {self.schema_version})"
+                )
+            self.servers = {}
+            return
+
+        raw_servers = data.get("servers", {})
+        if not isinstance(raw_servers, dict):
+            if fail_closed:
+                raise PinStoreError("Invalid pin store servers dict")
+            self.servers = {}
+            return
+
+        parsed_servers: dict[str, ServerPin] = {}
+        for srv_name, srv_data in raw_servers.items():
+            if not isinstance(srv_data, dict):
+                continue
+            srv_info = srv_data.get("server_info", {})
+            srv_hash = srv_data.get("server_hash", "")
+            pinned_at = srv_data.get("pinned_at", "")
+            raw_tools = srv_data.get("tools", {})
+            parsed_tools: dict[str, ToolPin] = {}
+            for t_name, t_data in raw_tools.items():
+                if not isinstance(t_data, dict):
+                    continue
+                t_def = dict(t_data.get("definition", {}))
+                raw_fields = t_data.get("hashed_fields")
+                if isinstance(raw_fields, list):
+                    h_fields = [str(x) for x in raw_fields]
+                else:
+                    h_fields = sorted(t_def.keys())
+                parsed_tools[t_name] = ToolPin(
+                    tool_hash=str(t_data.get("tool_hash", "")),
+                    definition=t_def,
+                    pinned_at=str(t_data.get("pinned_at", "")),
+                    hashed_fields=h_fields,
+                )
+            parsed_servers[srv_name] = ServerPin(
+                server_info=srv_info if isinstance(srv_info, dict) else {},
+                server_hash=str(srv_hash),
+                tools=parsed_tools,
+                pinned_at=str(pinned_at),
+            )
+
+        self.servers = parsed_servers
+
     def load(self, fail_closed: bool = True) -> None:
         """Load and validate pins.json.
 
@@ -237,73 +311,7 @@ class PinStore:
         self._lock_file_path.parent.mkdir(parents=True, exist_ok=True)
         with open(self._lock_file_path, "a+b") as lock_f:
             with _pin_file_lock(lock_f):
-                try:
-                    with open(self.store_path, "rb") as f:
-                        data = json.loads(f.read().decode("utf-8"))
-                except Exception as e:
-                    if fail_closed:
-                        raise PinStoreError(
-                            f"Pin store file corrupt or unreadable at {self.store_path}: {e}"
-                        ) from e
-                    self.servers = {}
-                    return
-
-                if not isinstance(data, dict):
-                    if fail_closed:
-                        raise PinStoreError(
-                            f"Invalid pin store root: expected dict, got {type(data).__name__}"
-                        )
-                    self.servers = {}
-                    return
-
-                version = data.get("schema_version")
-                if version != self.schema_version:
-                    if fail_closed:
-                        raise PinStoreError(
-                            f"Unsupported pin store schema_version: {version} (expected {self.schema_version})"
-                        )
-                    self.servers = {}
-                    return
-
-                raw_servers = data.get("servers", {})
-                if not isinstance(raw_servers, dict):
-                    if fail_closed:
-                        raise PinStoreError("Invalid pin store servers dict")
-                    self.servers = {}
-                    return
-
-                parsed_servers: dict[str, ServerPin] = {}
-                for srv_name, srv_data in raw_servers.items():
-                    if not isinstance(srv_data, dict):
-                        continue
-                    srv_info = srv_data.get("server_info", {})
-                    srv_hash = srv_data.get("server_hash", "")
-                    pinned_at = srv_data.get("pinned_at", "")
-                    raw_tools = srv_data.get("tools", {})
-                    parsed_tools: dict[str, ToolPin] = {}
-                    for t_name, t_data in raw_tools.items():
-                        if not isinstance(t_data, dict):
-                            continue
-                        t_def = dict(t_data.get("definition", {}))
-                        raw_fields = t_data.get("hashed_fields")
-                        if isinstance(raw_fields, list):
-                            h_fields = [str(x) for x in raw_fields]
-                        else:
-                            h_fields = sorted(t_def.keys())
-                        parsed_tools[t_name] = ToolPin(
-                            tool_hash=str(t_data.get("tool_hash", "")),
-                            definition=t_def,
-                            pinned_at=str(t_data.get("pinned_at", "")),
-                            hashed_fields=h_fields,
-                        )
-                    parsed_servers[srv_name] = ServerPin(
-                        server_info=srv_info if isinstance(srv_info, dict) else {},
-                        server_hash=str(srv_hash),
-                        tools=parsed_tools,
-                        pinned_at=str(pinned_at),
-                    )
-
-                self.servers = parsed_servers
+                self._load_unlocked(fail_closed=fail_closed)
 
     def _save_unlocked(self) -> None:
         """Internal save assuming caller holds lock."""
@@ -440,7 +448,7 @@ class PinStore:
             with _pin_file_lock(lock_f):
                 if self.store_path.exists():
                     try:
-                        self.load(fail_closed=False)
+                        self._load_unlocked(fail_closed=False)
                     except Exception:
                         pass
 
@@ -501,7 +509,7 @@ class PinStore:
             with _pin_file_lock(lock_f):
                 if self.store_path.exists():
                     try:
-                        self.load(fail_closed=False)
+                        self._load_unlocked(fail_closed=False)
                     except Exception:
                         pass
                 self.servers[server] = srv_pin

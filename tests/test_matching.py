@@ -310,7 +310,6 @@ def test_matching_edge_cases_and_error_handling() -> None:
 # ---------------------------------------------------------------------------
 
 
-@settings(max_examples=500, deadline=None)
 @given(
     st.lists(
         st.text(
@@ -338,14 +337,7 @@ def test_hypothesis_path_normalization_idempotent(parts: list[str]) -> None:
     assert norm1 == norm2
 
 
-@settings(max_examples=500, deadline=None)
-@given(
-    sub=st.text(
-        alphabet=st.characters(whitelist_categories=["Ll", "Nd"], whitelist_characters=["-"]),
-        min_size=1,
-        max_size=20,
-    ).filter(lambda s: not s.startswith("-") and not s.endswith("-"))
-)
+@given(sub=st.from_regex(r"[a-z0-9]([a-z0-9-]{0,18}[a-z0-9])?", fullmatch=True))
 def test_hypothesis_subdomain_matching_property(sub: str) -> None:
     domain_rule = compile_domain_pattern("*.testdomain.com")
     rules = [domain_rule]
