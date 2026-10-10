@@ -1,0 +1,34 @@
+# C1: Static Policy Only (Allowlists, no taint tracking or flow rules)
+version: 1
+mode: enforce
+serialize_calls: true
+
+capabilities:
+  fs.read_file:                [read]
+  fs.write_file:               [write]
+  fs.list_directory:           [read]
+  filesystem.read_file:        [read]
+  filesystem.write_file:       [write]
+  filesystem.list_directory:   [read]
+  fetch.fetch:                 [network_read, egress]
+  http.fetch:                  [network_read, egress]
+  github.get_issue:            [network_read]
+  github.create_issue_comment: [write, egress]
+  github.list_issues:          [network_read]
+  github.search_repositories:  [network_read]
+
+policies:
+  - agent: "*"
+    tools:
+      fs.read_file:                { path_allowlist: ["sandbox/**", "**/sandbox/**"] }
+      fs.write_file:               { path_allowlist: ["sandbox/**", "**/sandbox/**"] }
+      fs.list_directory:           { path_allowlist: ["sandbox/**", "**/sandbox/**"] }
+      filesystem.read_file:        { path_allowlist: ["sandbox/**", "**/sandbox/**"] }
+      filesystem.write_file:       { path_allowlist: ["sandbox/**", "**/sandbox/**"] }
+      filesystem.list_directory:   { path_allowlist: ["sandbox/**", "**/sandbox/**"] }
+      fetch.fetch:                 {}
+      http.fetch:                  {}
+      github.get_issue:            {}
+      github.create_issue_comment: {}
+      github.list_issues:          {}
+      github.search_repositories:  {}

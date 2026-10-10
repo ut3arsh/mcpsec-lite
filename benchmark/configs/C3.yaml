@@ -1,0 +1,82 @@
+# C3: Full Firewall + Detectors (Advisory)
+version: 1
+mode: enforce
+serialize_calls: true
+
+detectors:
+  secrets: true
+  injection_heuristics: true
+
+capabilities:
+  fs.read_file:                [read]
+  fs.write_file:               [write]
+  fs.list_directory:           [read]
+  filesystem.read_file:        [read]
+  filesystem.write_file:       [write]
+  filesystem.list_directory:   [read]
+  fetch.fetch:                 [network_read, egress]
+  http.fetch:                  [network_read, egress]
+  github.get_issue:            [network_read]
+  github.create_issue_comment: [write, egress]
+  github.list_issues:          [network_read]
+  github.search_repositories:  [network_read]
+
+policies:
+  - agent: "*"
+    tools:
+      fs.read_file:                { path_allowlist: ["sandbox/**", "**/sandbox/**"] }
+      fs.write_file:               { path_allowlist: ["sandbox/**", "**/sandbox/**"] }
+      fs.list_directory:           { path_allowlist: ["sandbox/**", "**/sandbox/**"] }
+      filesystem.read_file:        { path_allowlist: ["sandbox/**", "**/sandbox/**"] }
+      filesystem.write_file:       { path_allowlist: ["sandbox/**", "**/sandbox/**"] }
+      filesystem.list_directory:   { path_allowlist: ["sandbox/**", "**/sandbox/**"] }
+      fetch.fetch:                 {}
+      http.fetch:                  {}
+      github.get_issue:            {}
+      github.create_issue_comment: {}
+      github.list_issues:          {}
+      github.search_repositories:  {}
+
+taint_sources:
+  private_data:
+    - tool: fs.read_file
+      args: { path: ["**/.env*", "**/id_rsa*", "**/*secret*", "**/*credential*", "**/database.yml*", "**/auth.json*", "**/customers.csv*", "**/signing_key*", "**/api_keys*"] }
+    - tool: filesystem.read_file
+      args: { path: ["**/.env*", "**/id_rsa*", "**/*secret*", "**/*credential*", "**/database.yml*", "**/auth.json*", "**/customers.csv*", "**/signing_key*", "**/api_keys*"] }
+  untrusted_content:
+    - tool: github.get_issue
+    - tool: github.search_repositories
+    - tool: fetch.fetch
+    - tool: http.fetch
+
+flow_rules:
+  - id: deny-private-egress
+    if_session_has: [private_data]
+    deny_capabilities: [egress]
+    unless:
+      domain_allowlist:
+        - "docs.python.org"
+        - "api.github.com"
+        - "pypi.org"
+        - "json-schema.org"
+        - "cve.mitre.org"
+
+  - id: deny-untrusted-egress
+    if_session_has: [untrusted_content]
+    deny_capabilities: [egress]
+    unless:
+      domain_allowlist:
+        - "docs.python.org"
+        - "api.github.com"
+        - "pypi.org"
+        - "json-schema.org"
+        - "cve.mitre.org"
+
+  - id: appr-untrusted-write
+    if_session_has: [untrusted_content]
+    require_approval_capabilities: [write]
+
+approval:
+  channel: cli
+  timeout_seconds: 1
+  allow_clear: [untrusted_content]

@@ -1,0 +1,32 @@
+# C0: Baseline (Audit mode, pass-through, no restrictions)
+version: 1
+mode: audit
+capabilities:
+  fs.read_file:                [read]
+  fs.write_file:               [write]
+  fs.list_directory:           [read]
+  filesystem.read_file:        [read]
+  filesystem.write_file:       [write]
+  filesystem.list_directory:   [read]
+  fetch.fetch:                 [network_read, egress]
+  http.fetch:                  [network_read, egress]
+  github.get_issue:            [network_read]
+  github.create_issue_comment: [write, egress]
+  github.list_issues:          [network_read]
+  github.search_repositories:  [network_read]
+
+policies:
+  - agent: "*"
+    tools:
+      fs.read_file:                {}
+      fs.write_file:               {}
+      fs.list_directory:           {}
+      filesystem.read_file:        {}
+      filesystem.write_file:       {}
+      filesystem.list_directory:   {}
+      fetch.fetch:                 {}
+      http.fetch:                  {}
+      github.get_issue:            {}
+      github.create_issue_comment: {}
+      github.list_issues:          {}
+      github.search_repositories:  {}
