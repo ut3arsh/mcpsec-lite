@@ -22,7 +22,7 @@ from mcpsec_core.models import (
     SessionState,
     ToolCall,
 )
-from mcpsec_core.pinning import PinStore, clean_tool_definition
+from mcpsec_core.pinning import PinStore, check_pinning, clean_tool_definition
 from mcpsec_core.policy import check_policy
 from mcpsec_core.taint import update_taint
 from proxy.supervisor import UpstreamManager
@@ -393,13 +393,14 @@ class ProxySession:
         )
         effective_decision: Literal["forwarded", "blocked", "held"] = "forwarded"
         rule_id: str | None = None
+        # Check pinning mode and extract model-visible tool definition
+        tool_dict: dict[str, Any] = {"name": upstream_tool_name}
+        for t in self.upstream_manager.list_all_tools():
+            if t.name == name:
+                tool_dict = extract_model_visible_tool_dict(t, upstream_tool_name)
+                break
 
-        # Check pinning mode and status
-        pin_status: Literal["pinned", "unpinned", "changed", "unchecked"] = "unchecked"
-        diff_summary: str | None = None
-        current_hash: str = ""
         pinning_mode: Literal["audit", "strict"] = "audit"
-
         if (
             self.policy_data is not None
             and hasattr(self.policy_data, "pinning")
@@ -407,33 +408,20 @@ class ProxySession:
         ):
             pinning_mode = getattr(self.policy_data.pinning, "mode", "audit")
 
-            # Find tool definition for pinning check
-            tool_dict: dict[str, Any] = {"name": upstream_tool_name}
-            for t in self.upstream_manager.list_all_tools():
-                if t.name == name:
-                    tool_dict = extract_model_visible_tool_dict(t, upstream_tool_name)
-                    break
-
-            pin_status, diff_summary, current_hash = self.pin_store.check_tool(
+        try:
+            # 3.1 Pure pinning lifecycle check
+            pin_decision, pin_status, diff_summary, current_hash = check_pinning(
                 server=server_name,
+                tool_name=upstream_tool_name,
                 tool_def=tool_dict,
+                pin_store=self.pin_store,
                 mode=pinning_mode,
             )
 
-        try:
-            # 3.1 Pinning check in strict mode
-            if (
-                pinning_mode == "strict"
-                and pin_status != "pinned"
-                and self.policy_data is not None
-                and getattr(self.policy_data, "pinning", None) is not None
-            ):
-                err_code = (
-                    "ERR_UNPINNED_TOOL" if pin_status == "unpinned" else "ERR_TOOL_HASH_MISMATCH"
-                )
-                decision = "deny"
-                decision_layer = "pinning"
-                decision_reason = f"{err_code}: Tool '{server_name}.{upstream_tool_name}' is {pin_status} under strict pinning"
+            if not pin_decision.is_allowed:
+                decision = pin_decision.decision
+                decision_layer = pin_decision.layer
+                decision_reason = pin_decision.reason
             else:
                 # 3.2 Policy check
                 policy_decision = check_policy(tool_call, self.policy_data)

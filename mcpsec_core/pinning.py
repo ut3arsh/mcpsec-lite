@@ -79,12 +79,75 @@ else:
                     pass
 
 
-def check_pinning(server: str, pin_store: Any | None = None) -> Decision:
-    """Evaluate pinning status for a server. If no pin store configured, pass through."""
-    return Decision(
-        decision="allow",
-        reason="pass-through (no pinning store)" if pin_store is None else "pinned",
-        layer="pinning",
+def check_pinning(
+    server: str,
+    tool_name: str,
+    tool_def: dict[str, Any],
+    pin_store: PinStore | None = None,
+    mode: Literal["audit", "strict"] = "audit",
+) -> tuple[Decision, Literal["pinned", "unpinned", "changed", "unchecked"], str | None, str]:
+    """Pure pinning lifecycle evaluation function.
+
+    Takes server name, tool name, raw/cleaned tool definition, pin store snapshot, and pinning mode.
+    Returns: (Decision, pin_status, diff_summary, current_hash).
+
+    Precedence & Rules:
+    1. If pin_store is None:
+       - strict mode -> Decision(deny, layer="pinning", reason="ERR_UNPINNED_TOOL: No pin store configured under strict pinning")
+       - audit mode  -> Decision(allow, layer="pinning", reason="pass-through (no pinning store)")
+    2. If pin_store is present:
+       Evaluates pin status against store snapshot:
+       - 'pinned': Decision(allow, layer="pinning", reason="tool definition matches pin")
+       - 'unpinned':
+           strict mode -> Decision(deny, layer="pinning", reason="ERR_UNPINNED_TOOL: Tool '<server>.<tool>' is unpinned under strict pinning")
+           audit mode  -> Decision(allow, layer="pinning", reason="tool is unpinned (audit mode)")
+       - 'changed':
+           strict mode -> Decision(deny, layer="pinning", reason="ERR_TOOL_HASH_MISMATCH: Tool '<server>.<tool>' is changed under strict pinning")
+           audit mode  -> Decision(allow, layer="pinning", reason="tool definition changed (audit mode)")
+    """
+    if pin_store is None:
+        if mode == "strict":
+            return (
+                Decision(
+                    decision="deny",
+                    layer="pinning",
+                    reason="ERR_UNPINNED_TOOL: No pin store configured under strict pinning",
+                ),
+                "unchecked",
+                None,
+                "",
+            )
+        return (
+            Decision(
+                decision="allow",
+                layer="pinning",
+                reason="pass-through (no pinning store)",
+            ),
+            "unchecked",
+            None,
+            "",
+        )
+
+    status, diff_summary, current_hash = pin_store.check_tool(server, tool_def, mode=mode)
+
+    if mode == "strict" and status != "pinned":
+        err_code = "ERR_UNPINNED_TOOL" if status == "unpinned" else "ERR_TOOL_HASH_MISMATCH"
+        reason = f"{err_code}: Tool '{server}.{tool_name}' is {status} under strict pinning"
+        return (
+            Decision(decision="deny", layer="pinning", reason=reason),
+            status,
+            diff_summary,
+            current_hash,
+        )
+
+    reason = (
+        "tool definition matches pin" if status == "pinned" else f"tool is {status} (audit mode)"
+    )
+    return (
+        Decision(decision="allow", layer="pinning", reason=reason),
+        status,
+        diff_summary,
+        current_hash,
     )
 
 

@@ -31,7 +31,6 @@ from mcpsec_core.models import ToolCallEvent, parse_audit_event
 from mcpsec_core.pinning import (
     PinStore,
     PinStoreError,
-    check_pinning,
     compute_diff_summary,
     compute_tool_hash,
 )
@@ -720,14 +719,14 @@ def test_meta_no_config_starts_with_unimplemented_protection() -> None:
     POLICY_FEATURE_KEYS_TO_TESTS: dict[str, str] = {
         "version": "tests/test_policy.py::test_rule1_invalid_or_missing_version",
         "mode": "tests/test_proxy_policy.py::test_proxy_policy_enforce_mode_blocks_and_returns_generic_message",
-        "serialize_calls": "tests/test_concurrency_flow.py::test_serialize_calls_prevents_taint_race",
+        "serialize_calls": "tests/test_concurrency_flow.py::test_serialized_calls_prevent_egress_race",
         "capabilities": "tests/test_policy.py::test_rule3_capabilities_tag_outside_closed_set",
         "policies": "tests/test_policy.py::test_check_policy_path_and_domain_allowlists",
-        "taint_sources": "tests/test_flow_truth_table.py::test_taint_propagation_truth_table",
-        "flow_rules": "tests/test_flow_truth_table.py::test_flow_rules_truth_table",
+        "taint_sources": "tests/test_flow_truth_table.py::test_truth_table_non_network_tools",
+        "flow_rules": "tests/test_flow_truth_table.py::test_truth_table_egress_with_unless_exemption",
         "approval": "tests/test_approvals.py::test_approval_lifecycle_and_idempotence",
         "pinning": "tests/test_pinning.py::test_strict_pinning_hides_unpinned_tool_and_denies_call",
-        "detectors": "tests/test_detectors.py::test_advisory_detectors_do_not_modify_decisions",
+        "detectors": "tests/test_detectors.py::test_decision_invariance_and_response_privacy",
         "redaction": "tests/test_redaction.py::test_redaction_mode_redacted",
     }
 
@@ -810,8 +809,19 @@ policies:
         load_policy(invalid_cap_policy, check_unenforced_guards=True)
     assert any(e.get("code") == "ERR_INVALID_CAPABILITY" for e in exc_cap.value.errors)
 
-    # 5. Assert check_pinning stub passes cleanly
-    decision = check_pinning("fs")
-    assert decision.is_allowed
-    assert check_pinning("fs", None).is_allowed
-    assert check_pinning("fs", "store_obj").is_allowed
+    # 5. Programmatically verify that every mapped test id exists and is callable
+    import importlib
+
+    for feature_key, test_id in POLICY_FEATURE_KEYS_TO_TESTS.items():
+        file_part, func_part = test_id.split("::", 1)
+        test_file_path = Path(file_part)
+        assert test_file_path.exists(), (
+            f"Test file '{test_file_path}' for feature '{feature_key}' not found"
+        )
+        module_name = file_part.replace("/", ".").replace("\\", ".").removesuffix(".py")
+        mod = importlib.import_module(module_name)
+        assert hasattr(mod, func_part), (
+            f"Test function '{func_part}' for feature '{feature_key}' not found in {module_name}"
+        )
+        test_fn = getattr(mod, func_part)
+        assert callable(test_fn), f"Test '{func_part}' in {module_name} is not callable"
