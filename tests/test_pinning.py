@@ -627,35 +627,189 @@ def test_pin_cli_commands(tmp_path: Path, capsys: pytest.CaptureFixture[str]) ->
     assert "Approved pin for 'filesystem.read_file'" in captured_appr.out
 
 
-def test_meta_no_config_starts_with_unimplemented_protection() -> None:
-    """Meta-test: verify that all policy protections are actively enforced and unrecognized directives fail closed."""
-    # 1. Valid policy containing all current protection layers loads cleanly
-    full_policy_yaml = """
+@pytest.mark.asyncio
+async def test_server_info_change_emits_informational_event_and_never_denies(
+    tmp_path: Path,
+) -> None:
+    """A change in serverInfo emits an informational pin_event and never denies tool calls."""
+    pin_file = tmp_path / "pins.json"
+    pin_store = PinStore(pin_file)
+
+    tool_def = {"name": "read_doc", "description": "Read documentation", "inputSchema": {}}
+    pin_store.approve_tool("fs", tool_def, server_info={"name": "fs-server", "version": "1.0"})
+
+    policy_yaml = f"""
 version: 1
 mode: enforce
 pinning:
   mode: strict
+  store: {pin_file.as_posix()}
 capabilities:
-  fs.read: [read]
-  net.fetch: [network_read, egress]
+  fs.read_doc: [read]
+policies:
+  - agent: "*"
+    tools:
+      fs.read_doc: {{}}
+"""
+    policy, _, _ = load_policy(policy_yaml)
+    audit_file = tmp_path / "audit_server_info.jsonl"
+    audit_logger = AuditLogger(log_path=audit_file)
+
+    # 1. Server info changes in upstream server
+    mutated_server_info = {"name": "fs-server", "version": "2.0"}
+    status, diff_summary, _ = pin_store.check_server("fs", [tool_def], server_info=mutated_server_info)
+    assert status == "changed"
+    assert "server_info changed" in str(diff_summary)
+
+    # 2. Informational pin_event logged with effective_decision="logged"
+    audit_logger.log_pin_event(
+        server="fs",
+        tool=None,
+        action="server_info_changed",
+        old_hash=None,
+        new_hash=None,
+        diff_summary=diff_summary,
+        mode="strict",
+        effective_decision="logged",
+        session_id="s-srv-info",
+    )
+
+    upstream = AsyncMock(spec=UpstreamManager)
+    upstream.servers = {"fs": AsyncMock(is_healthy=True)}
+    upstream.list_all_tools.return_value = [
+        types.Tool(name="fs__read_doc", description="Read documentation", input_schema={})
+    ]
+    upstream.call_tool.return_value = types.CallToolResult(
+        content=[types.TextContent(type="text", text="doc content")]
+    )
+
+    session = ProxySession(
+        session_id="s-srv-info",
+        upstream_manager=upstream,
+        audit_logger=audit_logger,
+        policy_data=policy,
+        pin_store=pin_store,
+        mode="enforce",
+    )
+
+    # 3. Tool call succeeds despite serverInfo change
+    res = await session.call_tool("fs__read_doc", {})
+    assert not res.is_error
+    assert isinstance(res.content[0], types.TextContent)
+    assert res.content[0].text == "doc content"
+
+    # 4. Verify audit event
+    events = [
+        parse_audit_event(line)
+        for line in audit_file.read_text(encoding="utf-8").strip().split("\n")
+    ]
+    pin_events = [e for e in events if e.event_type == "pin_event"]
+    assert any(
+        p.action == "server_info_changed" and p.effective_decision == "logged"
+        for p in pin_events
+    )
+
+
+def test_meta_no_config_starts_with_unimplemented_protection() -> None:
+    """Meta-test: verify that all policy protections are actively enforced and unrecognized directives fail closed."""
+    from mcpsec_core.policy import RawPolicySchema, PolicyError
+
+    # 1. Enumerate every policy feature key declared in docs/policy_schema.md v1
+    # and map each key to a named test asserting its active enforcement.
+    POLICY_FEATURE_KEYS_TO_TESTS: dict[str, str] = {
+        "version": "tests/test_policy.py::test_rule1_invalid_or_missing_version",
+        "mode": "tests/test_proxy_policy.py::test_proxy_policy_enforce_mode_blocks_and_returns_generic_message",
+        "serialize_calls": "tests/test_concurrency_flow.py::test_serialize_calls_prevents_taint_race",
+        "capabilities": "tests/test_policy.py::test_rule3_capabilities_tag_outside_closed_set",
+        "policies": "tests/test_policy.py::test_check_policy_path_and_domain_allowlists",
+        "taint_sources": "tests/test_flow_truth_table.py::test_taint_propagation_truth_table",
+        "flow_rules": "tests/test_flow_truth_table.py::test_flow_rules_truth_table",
+        "approval": "tests/test_approvals.py::test_approval_lifecycle_and_idempotence",
+        "pinning": "tests/test_pinning.py::test_strict_pinning_hides_unpinned_tool_and_denies_call",
+        "detectors": "tests/test_detectors.py::test_advisory_detectors_do_not_modify_decisions",
+        "redaction": "tests/test_redaction.py::test_redaction_mode_redacted",
+    }
+
+    # Assert every field in RawPolicySchema is explicitly enumerated and accounted for
+    schema_fields = set(RawPolicySchema.model_fields.keys())
+    assert schema_fields == set(POLICY_FEATURE_KEYS_TO_TESTS.keys()), (
+        f"Mismatch in schema fields: schema={schema_fields}, enumerated={set(POLICY_FEATURE_KEYS_TO_TESTS.keys())}"
+    )
+
+    # 2. Assert full policy with all 11 protection features loads and validates cleanly
+    full_policy_yaml = """
+version: 1
+mode: enforce
+serialize_calls: true
+capabilities:
+  fs.read_file: [read]
+  fs.write_file: [write]
+  http.fetch: [network_read, egress]
+policies:
+  - agent: "*"
+    tools:
+      fs.read_file: { path_allowlist: ["/sandbox/**"] }
+      fs.write_file: { path_allowlist: ["/sandbox/**"] }
+      http.fetch: { domain_allowlist: ["api.github.com"] }
 taint_sources:
   untrusted_content:
-    - tool: fs.read
+    - tool: fs.read_file
 flow_rules:
   - id: deny-untrusted-egress
     if_session_has: [untrusted_content]
     deny_capabilities: [egress]
-policies:
-  - agent: "*"
-    tools:
-      fs.read: {}
-      net.fetch: {}
+approval:
+  channel: cli
+  allow_clear: [untrusted_content]
+pinning:
+  mode: strict
+  store: ./pins.json
+detectors:
+  secrets: true
+  injection_heuristics: true
+redaction:
+  log_args: redacted
 """
     policy, _, warns = load_policy(full_policy_yaml, check_unenforced_guards=True)
-    assert policy.pinning is not None and policy.pinning.mode == "strict"
+    assert policy.version == 1
+    assert policy.mode == "enforce"
+    assert policy.serialize_calls is True
+    assert policy.pinning.mode == "strict"
     assert len(policy.flow_rules) == 1
+    assert policy.approval.channel == "cli"
+    assert policy.detectors.secrets is True
+    assert policy.redaction.log_args == "redacted"
 
-    # 2. Stub function check_pinning works cleanly
+    # 3. Assert unknown directives or keys at root fail closed at startup with ERR_UNKNOWN_KEY
+    invalid_key_policy = """
+version: 1
+mode: enforce
+unimplemented_feature_guard: true
+capabilities:
+  fs.read_file: [read]
+policies:
+  - agent: "*"
+    tools: { fs.read_file: {} }
+"""
+    with pytest.raises(PolicyError) as exc_unknown:
+        load_policy(invalid_key_policy, check_unenforced_guards=True)
+    assert any(e.get("code") == "ERR_UNKNOWN_KEY" for e in exc_unknown.value.errors)
+
+    # 4. Assert invalid capability tag fails closed at startup with ERR_INVALID_CAPABILITY
+    invalid_cap_policy = """
+version: 1
+mode: enforce
+capabilities:
+  fs.read_file: [invalid_unsupported_tag]
+policies:
+  - agent: "*"
+    tools: { fs.read_file: {} }
+"""
+    with pytest.raises(PolicyError) as exc_cap:
+        load_policy(invalid_cap_policy, check_unenforced_guards=True)
+    assert any(e.get("code") == "ERR_INVALID_CAPABILITY" for e in exc_cap.value.errors)
+
+    # 5. Assert check_pinning stub passes cleanly
     decision = check_pinning("fs")
     assert decision.is_allowed
     assert check_pinning("fs", None).is_allowed
