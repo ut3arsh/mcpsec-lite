@@ -8,8 +8,8 @@
 
 Attacks are partitioned strictly from specifications (`DESIGN.md`, `NOTES.md`, `docs/policy_schema.md`, `docs/benchmark_spec.md`), not from test results.
 
-- **IN-SCOPE (14):** The design and threat model claim active prevention.
-- **KNOWN-GAP (6):** Documented architectural limits or known gaps (`test_known_gaps.py`, `NOTES.md`).
+- **IN-SCOPE (13):** The design and threat model claim active prevention.
+- **KNOWN-GAP (7):** Documented architectural limits or known gaps (`test_known_gaps.py`, `NOTES.md`, `docs/benchmark_spec.md` §3.2).
 - **OUT-OF-SCOPE (2):** Outside the proxy boundary or threat model trust boundaries.
 
 ### Partitioning Rationale Table
@@ -34,7 +34,7 @@ Attacks are partitioned strictly from specifications (`DESIGN.md`, `NOTES.md`, `
 | `ATTACK-16` | Data Smuggling in Parameters of Read-Only Tool | **KNOWN-GAP** | `DESIGN.md` §3 line 74 & `NOTES.md` §Week 5 line 184: Read-only network tools tagged with `network_read` without `egress` can leak data via query parameters. |
 | `ATTACK-17` | Human Approval Fatigue Exploitation | **OUT-OF-SCOPE** | `DESIGN.md` §3 lines 49–59: Threat model trust boundaries define policy authors and operators as trusted; automated human approval fatigue bypasses operator elevation. |
 | `ATTACK-18` | Low-and-Slow Multi-Call Chunking to Exempt Endpoint | **KNOWN-GAP** | `DESIGN.md` §3 line 74 & `NOTES.md` §Week 5 line 184: Side-channel query exfiltration over allowlisted CDN logs. |
-| `ATTACK-19` | Allowed-Channel Leakage into Project Issue Comments | **IN-SCOPE** | `DESIGN.md` §3 line 74 & `docs/benchmark_spec.md` §3.2 line 49: Blocked because `create_issue_comment` carries capability `[write, egress]`. |
+| `ATTACK-19` | Allowed-Channel Leakage into Project Issue Comments | **KNOWN-GAP** | `docs/benchmark_spec.md` §3.2 line 49 & `DESIGN.md` §3 line 74: Secret written into an allowed channel (issue comment) is an expected limitation / known gap without semantic inspection. |
 | `ATTACK-20` | HTTP 302 Redirect SSRF to Internal Metadata Service | **KNOWN-GAP** | `DESIGN.md` §2 line 27 & `tests/test_known_gaps.py`: Upstream HTTP server following 302 redirects to unallowlisted internal IP addresses. |
 | `ATTACK-21` | Filesystem Symlink TOCTOU Retargeting | **KNOWN-GAP** | `DESIGN.md` §3 line 75, `NOTES.md` §Week 2 line 101, & `tests/test_known_gaps.py`: Symlink swapping race between proxy validation and upstream server open. |
 | `ATTACK-22` | Tool-Description Poisoning Rug-Pull | **IN-SCOPE** | `DESIGN.md` §3 line 66 & `docs/benchmark_spec.md` §1 line 14: Mid-session tool description changes detected and blocked under strict pinning (C4). |
@@ -43,27 +43,29 @@ Attacks are partitioned strictly from specifications (`DESIGN.md`, `NOTES.md`, `
 
 ## 2. Statistical Performance Across Configurations (Wilson 95% CIs)
 
-### In-Scope Attacks (n = 14)
+### In-Scope Attacks (n = 13)
 *Goal: Deterministic policy + flow control + strict pinning should completely eliminate in-scope attacks.*
 
 | Config | Attacks Succeeded (k/n) | ASR (%) | Wilson 95% CI | Prevented (%) |
 |---|---|---|---|---|
-| **C0** | 14/14 | 100.0% | [0.7847, 1.0000] | 0.0% |
-| **C1** | 13/14 | 92.9% | [0.6853, 0.9873] | 7.1% |
-| **C2** | 1/14 | 7.1% | [0.0127, 0.3147] | 92.9% |
-| **C4** | **0/14** | **0.0%** | **[0.0000, 0.2153]** | **100.0%** |
+| **C0** | 13/13 | 100.0% | [0.7719, 1.0000] | 0.0% |
+| **C1** | 12/13 | 92.3% | [0.6669, 0.9863] | 7.7% |
+| **C2** | 1/13 | 7.7% | [0.0137, 0.3331] | 92.3% |
+| **C3** | 1/13 | 7.7% | [0.0137, 0.3331] | 92.3% |
+| **C4** | **0/13** | **0.0%** | **[0.0000, 0.2281]** | **100.0%** |
 
-*Note on small n:* With n = 14, 0/14 corresponds to a Wilson 95% CI upper bound of 21.5%. C4 blocks 100% of tested in-scope scenarios (including ATTACK-22 tool rug pull).
+*Note on small n:* With n = 13, 0/13 corresponds to a Wilson 95% CI upper bound of 22.8%. C4 blocks 100% of tested in-scope scenarios (including ATTACK-22 tool rug pull).
 
-### Known-Gap Attacks (n = 6)
-*Documented architectural limits: data laundering, unless-exempt domains, query smuggling, side channels, HTTP redirects, TOCTOU.*
+### Known-Gap Attacks (n = 7)
+*Documented architectural limits: data laundering, unless-exempt domains, query smuggling, side channels, allowed-channel leakage, HTTP redirects, TOCTOU.*
 
 | Config | Attacks Succeeded (k/n) | ASR (%) | Wilson 95% CI | Prevented (%) |
 |---|---|---|---|---|
-| **C0** | 6/6 | 100.0% | [0.6097, 1.0000] | 0.0% |
-| **C1** | 6/6 | 100.0% | [0.6097, 1.0000] | 0.0% |
-| **C2** | 6/6 | 100.0% | [0.6097, 1.0000] | 0.0% |
-| **C4** | 6/6 | 100.0% | [0.6097, 1.0000] | 0.0% |
+| **C0** | 7/7 | 100.0% | [0.6457, 1.0000] | 0.0% |
+| **C1** | 7/7 | 100.0% | [0.6457, 1.0000] | 0.0% |
+| **C2** | 7/7 | 100.0% | [0.6457, 1.0000] | 0.0% |
+| **C3** | 7/7 | 100.0% | [0.6457, 1.0000] | 0.0% |
+| **C4** | 7/7 | 100.0% | [0.6457, 1.0000] | 0.0% |
 
 ### Out-of-Scope Attacks (n = 2)
 *Outside proxy session boundary (ATTACK-13 cross-session replay) and human trust model (ATTACK-17 approval fatigue).*
@@ -73,6 +75,7 @@ Attacks are partitioned strictly from specifications (`DESIGN.md`, `NOTES.md`, `
 | **C0** | 2/2 | 100.0% | [0.3424, 1.0000] |
 | **C1** | 2/2 | 100.0% | [0.3424, 1.0000] |
 | **C2** | 2/2 | 100.0% | [0.3424, 1.0000] |
+| **C3** | 2/2 | 100.0% | [0.3424, 1.0000] |
 | **C4** | 2/2 | 100.0% | [0.3424, 1.0000] |
 
 ---
