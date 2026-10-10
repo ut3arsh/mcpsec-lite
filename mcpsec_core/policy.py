@@ -592,12 +592,18 @@ def load_policy(
         with open(policy_source, "rb") as f:
             raw_bytes = f.read()
     elif isinstance(policy_source, str):
-        p = Path(policy_source)
-        if p.exists() and p.is_file():
-            with open(p, "rb") as f:
-                raw_bytes = f.read()
-        else:
+        if "\n" in policy_source or "\r" in policy_source:
             raw_bytes = policy_source.encode("utf-8")
+        else:
+            try:
+                p = Path(policy_source)
+                if p.exists() and p.is_file():
+                    with open(p, "rb") as f:
+                        raw_bytes = f.read()
+                else:
+                    raw_bytes = policy_source.encode("utf-8")
+            except (OSError, ValueError):
+                raw_bytes = policy_source.encode("utf-8")
     elif isinstance(policy_source, bytes):
         raw_bytes = policy_source
     else:
