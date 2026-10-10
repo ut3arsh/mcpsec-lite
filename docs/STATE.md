@@ -1,15 +1,15 @@
 # STATE.md — current project state (update at the end of every chunk; verified facts only)
 
-**As of:** end of week 5, chunk 5.2.
+**As of:** end of week 5, chunk 5.3.
 
 ## Built (verified)
 - Weeks 1–4: pass-through proxy, JSONL audit log, policy engine (default deny, path/domain matching), multi-upstream aggregation, taint + flow rules (with `unless` exemption), approval queue + CLI, CI workflow, conformance matrix.
-- Week 5 (chunk 5.2): tool-description pinning with "all model-visible fields except `_meta`" hashing, `hashed_fields` recorded in `pins.json`, generic agent-facing denials (`Denied by mcpsec policy`) with `ERR_*` codes restricted to audit logs, `tools/list_changed` re-fetching and downstream notification, atomic concurrency-safe approvers, serverInfo informational changes, and meta-test for protection completeness.
+- Week 5 (chunks 5.2–5.3): tool-description pinning with "all model-visible fields except `_meta`" hashing, `hashed_fields` recorded in `pins.json`, generic agent-facing denials (`Denied by mcpsec policy`) with `ERR_*` codes restricted to audit logs, `tools/list_changed` re-fetching and downstream notification, multi-process and multi-thread concurrency safety for PinStore and ApprovalManager, serverInfo informational changes, bi-directional audit enum contract test, and meta-test for complete policy feature enumeration.
 
-## Verified Numbers (chunk 5.2 run)
-- **176 tests collected**: 170 passed, 4 skipped, 2 xfailed in 74.1s. `mypy --strict`: 0 issues in 59 files. `ruff`: clean.
-- **`mcpsec_core/pinning.py` branch coverage**: **93%** (285 stmts, 86 branches; gate >= 90% passed).
-- **Core module branch coverage**: policy 96%, models 96%, adapters 93%, flow 92%, matching 91%, audit 88%, approvals 81%, detectors 78%, pinning 93%.
+## Verified Numbers (chunk 5.3 run)
+- **180 tests collected**: 170 passed, 2 skipped, 6 deselected, 2 xfailed in 36.2s (plain pytest < 60s gate passed). `mypy --strict`: 0 issues in 59 files. `ruff`: clean.
+- **`mcpsec_core/pinning.py` branch coverage**: **92%** (290 stmts, 88 branches; gate >= 90% passed).
+- **Core module branch coverage**: policy 96%, models 96%, adapters 93%, flow 92%, matching 91%, audit 88%, approvals 81%, detectors 78%, pinning 92%.
 
 ## Open Items (to close in order)
 1. [x Closed in 5.2] Pinning tested end-to-end: `tools/list_changed`, rug-pull audit vs strict, corrupt store fail-closed, concurrent approvers, first-use approval in strict, invisible/bidi diff flags.
