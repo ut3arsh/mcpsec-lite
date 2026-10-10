@@ -160,7 +160,7 @@ Measured via `tests/test_perf.py` on a policy containing **1,000 rules across 10
 
 ### Week 5 Decisions & Applied Spec Patches
 
-1. **[x Applied] Removal of Path Resolution LRU Cache (ADR-015)**:
+1. **[x Applied] Removal of Path Resolution LRU Cache (ADR-017)**:
    - *Decision*: Removed all LRU caching on path canonicalization (`_fast_realpath`). Every path check resolves symlinks/junctions dynamically from the OS filesystem table to prevent TOCTOU symlink retargeting escapes within the cache window.
 
 2. **[x Applied] Tool-Description Pinning (ADR-016 & `docs/policy_schema.md` §7)**:

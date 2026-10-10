@@ -98,3 +98,15 @@ Format: **Status · Context · Decision · Consequences.**
 2. Flow rules may specify an `unless: { domain_allowlist: [...] }` exemption. The rule is skipped for a call only if every domain-constrained argument parses and matches the allowlist; any parse failure, missing argument, or non-match causes the rule to apply (fail closed).
 3. `unless` is valid exclusively on flow rules whose capabilities include `egress`, and only applies to tools declaring a domain adapter.
 **Consequences:** Closes the GET-based exfiltration attack vector while enabling multi-step workflows to fetch documentation or search within allowlisted safe domains even after seeing untrusted content. Non-matching or unparsable URLs fail closed to denial.
+
+## ADR-016 — Tool-Description Pinning
+**Status:** Accepted · 2026-10-10
+**Context:** Upstream MCP servers or compromised dependencies can mutate tool descriptions mid-session or on startup to inject malicious instructions to the model (rug-pull attacks).
+**Decision:** Implement deterministic tool pinning over all model-visible fields (`name`, `description`, `inputSchema`). In `mode: strict`, unpinned or modified tools are hidden from `tools/list` and blocked from invocation. Tool approvals are stored in `pins.json` with atomic writes and cross-platform file locking.
+**Consequences:** Closes the tool description poisoning vector (ATTACK-22). Requires initial tool review/approval (`mcpsec-pin approve`).
+
+## ADR-017 — Removal of Path Resolution Cache to Prevent TOCTOU Retargeting
+**Status:** Accepted · 2026-10-10
+**Context:** Caching path resolutions across tool calls introduces a race window where symlinks or directory junctions can be retargeted to sensitive locations outside the sandbox after validation.
+**Decision:** Never cache filesystem path canonicalization across tool calls. Every path check resolves real paths dynamically against the OS filesystem table on every invocation.
+**Consequences:** Closes cache-window symlink retargeting attacks; eliminates stale path state at negligible latency cost (<2 ms per call).
