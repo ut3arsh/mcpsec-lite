@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import time
 import uuid
+from pathlib import Path
 from typing import Any, Literal
 
 import anyio
@@ -20,7 +21,7 @@ from mcpsec_core.models import (
     SessionState,
     ToolCall,
 )
-from mcpsec_core.pinning import check_pinning
+from mcpsec_core.pinning import PinStore
 from mcpsec_core.policy import check_policy
 from mcpsec_core.taint import update_taint
 from proxy.supervisor import UpstreamManager
@@ -61,6 +62,7 @@ class ProxySession:
         mode: Literal["audit", "enforce"] = "enforce",
         policy_data: Any = None,
         approval_manager: ApprovalManager | None = None,
+        pin_store: PinStore | None = None,
     ) -> None:
         self.session_id = session_id
         self.upstream_manager = upstream_manager
@@ -70,6 +72,21 @@ class ProxySession:
         self.mode = mode
         self.policy_data = policy_data
         self.approval_manager = approval_manager or ApprovalManager()
+
+        # Initialize PinStore
+        if pin_store is not None:
+            self.pin_store = pin_store
+        elif (
+            self.policy_data is not None
+            and hasattr(self.policy_data, "pinning")
+            and self.policy_data.pinning
+            and getattr(self.policy_data.pinning, "store", None)
+        ):
+            self.pin_store = PinStore(Path(self.policy_data.pinning.store))
+        else:
+            self.pin_store = PinStore("./pins.json")
+
+        self.pin_store.load(fail_closed=(self.mode == "enforce"))
 
         # Single SessionState spanning all upstreams
         self.session_state = SessionState(
@@ -107,9 +124,97 @@ class ProxySession:
         )
 
     async def list_tools(self) -> types.ListToolsResult:
-        """Return deterministic, sorted union of all healthy upstreams' tools."""
-        tools = self.upstream_manager.list_all_tools()
-        return types.ListToolsResult(tools=tools)
+        """Return deterministic, sorted union of visible tools according to pinning policy."""
+        all_tools = self.upstream_manager.list_all_tools()
+        pinning_mode: Literal["audit", "strict"] = "audit"
+        if (
+            self.policy_data is not None
+            and hasattr(self.policy_data, "pinning")
+            and self.policy_data.pinning
+        ):
+            pinning_mode = getattr(self.policy_data.pinning, "mode", "audit")
+
+        visible_tools: list[types.Tool] = []
+        for t in all_tools:
+            try:
+                server_name, upstream_tool_name = decode_tool_name(t.name)
+            except Exception:
+                server_name, upstream_tool_name = "unknown", t.name
+
+            in_schema = getattr(t, "input_schema", None) or getattr(t, "inputSchema", {})
+            out_schema = getattr(t, "output_schema", None) or getattr(t, "outputSchema", None)
+            tool_dict: dict[str, Any] = {
+                "name": upstream_tool_name,
+                "description": getattr(t, "description", None),
+                "inputSchema": in_schema,
+            }
+            if getattr(t, "title", None) is not None:
+                tool_dict["title"] = t.title
+            if out_schema is not None:
+                tool_dict["outputSchema"] = out_schema
+            if getattr(t, "annotations", None) is not None:
+                tool_dict["annotations"] = t.annotations
+
+            status, diff_summary, new_hash = self.pin_store.check_tool(
+                server=server_name,
+                tool_def=tool_dict,
+                mode=pinning_mode,
+            )
+
+            if pinning_mode == "strict":
+                if status == "pinned":
+                    visible_tools.append(t)
+                else:
+                    # OMIT unreviewed / changed tool from agent-facing list
+                    action: Literal["first_seen", "changed"] = (
+                        "first_seen" if status == "unpinned" else "changed"
+                    )
+                    old_pin = self.pin_store.get_tool_pin(server_name, upstream_tool_name)
+                    old_hash = old_pin.tool_hash if old_pin else None
+                    self.audit_logger.log_pin_event(
+                        server=server_name,
+                        tool=upstream_tool_name,
+                        action=action,
+                        old_hash=old_hash,
+                        new_hash=new_hash,
+                        diff_summary=diff_summary,
+                        mode="strict",
+                        effective_decision="blocked_until_approved",
+                        session_id=self.session_id,
+                    )
+            else:
+                # audit mode: expose all tools to agent
+                visible_tools.append(t)
+                if status == "unpinned":
+                    self.audit_logger.log_pin_event(
+                        server=server_name,
+                        tool=upstream_tool_name,
+                        action="first_seen",
+                        old_hash=None,
+                        new_hash=new_hash,
+                        diff_summary=diff_summary,
+                        mode="audit",
+                        effective_decision="accepted",
+                        session_id=self.session_id,
+                    )
+                    # Trust on first use in audit mode
+                    self.pin_store.approve_tool(server_name, tool_dict)
+                elif status == "changed":
+                    old_pin = self.pin_store.get_tool_pin(server_name, upstream_tool_name)
+                    old_hash = old_pin.tool_hash if old_pin else None
+                    self.audit_logger.log_pin_event(
+                        server=server_name,
+                        tool=upstream_tool_name,
+                        action="changed",
+                        old_hash=old_hash,
+                        new_hash=new_hash,
+                        diff_summary=diff_summary,
+                        mode="audit",
+                        effective_decision="logged",
+                        session_id=self.session_id,
+                    )
+
+        return types.ListToolsResult(tools=visible_tools)
 
     async def call_tool(
         self,
@@ -161,7 +266,6 @@ class ProxySession:
         try:
             server_name, upstream_tool_name = decode_tool_name(name)
         except (ToolNameMappingError, ValueError) as err:
-            # Unknown prefix or invalid format -> deny ERR_UNKNOWN_TOOL
             post_duration_ms = (time.perf_counter() - t_proxy_start) * 1000.0
             self.session_state.deny_count += 1
             self.session_state.call_count += 1
@@ -246,17 +350,47 @@ class ProxySession:
             "pass-through (no policy)" if self.policy_data is None else "allowed by policy"
         )
         effective_decision: Literal["forwarded", "blocked", "held"] = "forwarded"
-
         rule_id: str | None = None
 
+        # Check pinning mode
+        pinning_mode: Literal["audit", "strict"] = "audit"
+        if (
+            self.policy_data is not None
+            and hasattr(self.policy_data, "pinning")
+            and self.policy_data.pinning
+        ):
+            pinning_mode = getattr(self.policy_data.pinning, "mode", "audit")
+
+        # Find tool definition for pinning check
+        tool_dict: dict[str, Any] = {"name": upstream_tool_name}
+        for t in self.upstream_manager.list_all_tools():
+            if t.name == name:
+                in_schema = getattr(t, "input_schema", None) or getattr(t, "inputSchema", {})
+                out_schema = getattr(t, "output_schema", None) or getattr(t, "outputSchema", None)
+                tool_dict["description"] = getattr(t, "description", None)
+                tool_dict["inputSchema"] = in_schema
+                if getattr(t, "title", None) is not None:
+                    tool_dict["title"] = t.title
+                if out_schema is not None:
+                    tool_dict["outputSchema"] = out_schema
+                if getattr(t, "annotations", None) is not None:
+                    tool_dict["annotations"] = t.annotations
+                break
+
+        pin_status, diff_summary, current_hash = self.pin_store.check_tool(
+            server=server_name,
+            tool_def=tool_dict,
+            mode=pinning_mode,
+        )
+
         try:
-            # 3.1 Pinning check
-            pinning_decision = check_pinning(server_name, None)
-            if not pinning_decision.is_allowed:
-                decision = pinning_decision.decision
-                decision_layer = pinning_decision.layer
-                decision_reason = pinning_decision.reason
-                rule_id = pinning_decision.rule_id
+            # 3.1 Pinning check in strict mode
+            if pinning_mode == "strict" and pin_status != "pinned":
+                decision = "deny"
+                decision_layer = "pinning"
+                decision_reason = (
+                    f"Tool '{server_name}.{upstream_tool_name}' is {pin_status} under strict pinning"
+                )
             else:
                 # 3.2 Policy check
                 policy_decision = check_policy(tool_call, self.policy_data)
@@ -341,7 +475,7 @@ class ProxySession:
                 decision_layer=decision_layer,
                 decision_reason=decision_reason,
                 rule_id=rule_id,
-                pin_status="unchecked",
+                pin_status=pin_status,
                 latency_ms=LatencyMs(proxy=round(total_proxy_ms, 3), upstream=None),
                 taint_before=taint_before,
                 taint_after=taint_before,
@@ -404,7 +538,7 @@ class ProxySession:
             decision_layer=decision_layer,
             decision_reason=decision_reason,
             rule_id=rule_id,
-            pin_status="unchecked",
+            pin_status=pin_status,
             latency_ms=LatencyMs(
                 proxy=round(total_proxy_ms, 3),
                 upstream=round(upstream_duration_ms, 3),

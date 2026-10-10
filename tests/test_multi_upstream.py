@@ -210,27 +210,8 @@ async def test_non_required_upstream_degradation(tmp_path: Path) -> None:
         tg.cancel_scope.cancel()
 
 
-def test_unenforced_policy_guard_fails_closed_in_enforce_mode() -> None:
-    """Test that policy with flow_rules/taint_sources/strict pinning refuses to start in enforce mode."""
-    yaml_enforce = """
-version: 1
-mode: enforce
-capabilities:
-  fs.read_file: [read]
-policies:
-  - agent: "*"
-    tools:
-      fs.read_file: {}
-pinning:
-  mode: strict
-"""
-    with pytest.raises(PolicyError) as exc_info:
-        load_policy(yaml_enforce, check_unenforced_guards=True)
-    assert any(e["code"] == "ERR_NOT_YET_ENFORCED" for e in exc_info.value.errors)
-
-
-def test_flow_rules_and_taint_sources_now_enforced_in_enforce_mode() -> None:
-    """Test that Week 4 flow_rules and taint_sources load cleanly without ERR_NOT_YET_ENFORCED."""
+def test_all_protections_including_strict_pinning_now_enforced_in_enforce_mode() -> None:
+    """Test that all protections (flow rules, taint sources, and strict pinning) load cleanly in enforce mode."""
     yaml_enforce = """
 version: 1
 mode: enforce
@@ -247,26 +228,10 @@ flow_rules:
   - id: rule-1
     if_session_has: [untrusted_content]
     deny_capabilities: [read]
-"""
-    policy, p_hash, warnings = load_policy(yaml_enforce, check_unenforced_guards=True)
-    assert policy.mode == "enforce"
-    assert len(policy.compiled_flow_rules) == 1
-
-
-def test_unenforced_policy_allowed_with_warning_in_audit_mode() -> None:
-    """Test that policy with strict pinning starts with warning in audit mode."""
-    yaml_audit = """
-version: 1
-mode: audit
-capabilities:
-  fs.read_file: [read]
-policies:
-  - agent: "*"
-    tools:
-      fs.read_file: {}
 pinning:
   mode: strict
 """
-    policy, p_hash, warnings = load_policy(yaml_audit, check_unenforced_guards=True)
-    assert policy.mode == "audit"
-    assert any("Strict pinning" in w for w in warnings)
+    policy, p_hash, warnings = load_policy(yaml_enforce, check_unenforced_guards=True)
+    assert policy.mode == "enforce"
+    assert policy.pinning.mode == "strict"
+    assert len(policy.compiled_flow_rules) == 1

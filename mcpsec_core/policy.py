@@ -227,27 +227,6 @@ def validate_and_compile_policy(
             f"Policy validation failed with {len(errors)} error(s): {msg_summary}", errors=errors
         )
 
-    # Part D Guard: No false assurance for unenforced policy features at proxy startup
-    if check_unenforced_guards:
-        has_unenforced_features = bool(parsed_schema.pinning.mode == "strict")
-        if has_unenforced_features:
-            if parsed_schema.mode == "enforce":
-                errors.append(
-                    {
-                        "code": "ERR_NOT_YET_ENFORCED",
-                        "path": "mode",
-                        "message": (
-                            "Strict pinning is not yet enforced (scheduled for Week 5); "
-                            "policy cannot start in mode: enforce with strict pinning configured."
-                        ),
-                    }
-                )
-            else:
-                warnings.append(
-                    "Strict pinning is configured but not yet enforced (scheduled for Week 5); "
-                    "running in mode: audit with advisory logging only."
-                )
-
     # 3. Rule 3: capabilities tags in closed set
     for tool_id, tags in parsed_schema.capabilities.items():
         for tag in tags:

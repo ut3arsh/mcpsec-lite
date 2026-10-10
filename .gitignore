@@ -16,6 +16,7 @@ venv/
 
 # Logs and outputs
 *.log
+*.lock
 audit.jsonl
 pending_approvals.jsonl
 pins.json
