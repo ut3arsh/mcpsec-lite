@@ -183,6 +183,13 @@ def compute_diff_summary(
     if old_def.get("annotations") != new_def.get("annotations"):
         changes.append("annotations changed")
 
+    added_keys = sorted(set(new_def.keys()) - set(old_def.keys()))
+    removed_keys = sorted(set(old_def.keys()) - set(new_def.keys()))
+    if added_keys:
+        changes.append(f"added fields: {', '.join(added_keys)}")
+    if removed_keys:
+        changes.append(f"removed fields: {', '.join(removed_keys)}")
+
     if not changes:
         changes.append("definition metadata changed")
 
@@ -197,6 +204,7 @@ class ToolPin:
     tool_hash: str
     definition: dict[str, Any]
     pinned_at: str
+    hashed_fields: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -276,10 +284,17 @@ class PinStore:
                     for t_name, t_data in raw_tools.items():
                         if not isinstance(t_data, dict):
                             continue
+                        t_def = dict(t_data.get("definition", {}))
+                        raw_fields = t_data.get("hashed_fields")
+                        if isinstance(raw_fields, list):
+                            h_fields = [str(x) for x in raw_fields]
+                        else:
+                            h_fields = sorted(t_def.keys())
                         parsed_tools[t_name] = ToolPin(
                             tool_hash=str(t_data.get("tool_hash", "")),
-                            definition=dict(t_data.get("definition", {})),
+                            definition=t_def,
                             pinned_at=str(t_data.get("pinned_at", "")),
+                            hashed_fields=h_fields,
                         )
                     parsed_servers[srv_name] = ServerPin(
                         server_info=srv_info if isinstance(srv_info, dict) else {},
@@ -290,11 +305,9 @@ class PinStore:
 
                 self.servers = parsed_servers
 
-    def save(self) -> None:
-        """Atomically save pin store with fsync, cross-platform locking, and replace."""
+    def _save_unlocked(self) -> None:
+        """Internal save assuming caller holds lock."""
         self.store_path.parent.mkdir(parents=True, exist_ok=True)
-        self._lock_file_path.parent.mkdir(parents=True, exist_ok=True)
-
         payload = {
             "schema_version": self.schema_version,
             "servers": {
@@ -306,6 +319,7 @@ class PinStore:
                         t_name: {
                             "tool_hash": t_pin.tool_hash,
                             "definition": t_pin.definition,
+                            "hashed_fields": t_pin.hashed_fields or sorted(t_pin.definition.keys()),
                             "pinned_at": t_pin.pinned_at,
                         }
                         for t_name, t_pin in sorted(srv_pin.tools.items())
@@ -319,23 +333,28 @@ class PinStore:
             "utf-8"
         )
 
+        temp_file = self.store_path.with_name(
+            f"{self.store_path.name}.tmp.{os.getpid()}.{time.time_ns()}"
+        )
+        try:
+            with open(temp_file, "wb") as f:
+                f.write(canonical_data)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(temp_file, self.store_path)
+        finally:
+            if temp_file.exists():
+                try:
+                    temp_file.unlink()
+                except Exception:
+                    pass
+
+    def save(self) -> None:
+        """Atomically save pin store with fsync, cross-platform locking, and replace."""
+        self._lock_file_path.parent.mkdir(parents=True, exist_ok=True)
         with open(self._lock_file_path, "a+b") as lock_f:
             with _pin_file_lock(lock_f):
-                temp_file = self.store_path.with_name(
-                    f"{self.store_path.name}.tmp.{os.getpid()}.{time.time_ns()}"
-                )
-                try:
-                    with open(temp_file, "wb") as f:
-                        f.write(canonical_data)
-                        f.flush()
-                        os.fsync(f.fileno())
-                    os.replace(temp_file, self.store_path)
-                finally:
-                    if temp_file.exists():
-                        try:
-                            temp_file.unlink()
-                        except Exception:
-                            pass
+                self._save_unlocked()
 
     def get_tool_pin(self, server: str, tool: str) -> ToolPin | None:
         srv = self.servers.get(server)
@@ -354,18 +373,47 @@ class PinStore:
         Returns (status, diff_summary, current_hash).
         """
         tool_name = str(tool_def.get("name", ""))
-        current_hash = compute_tool_hash(tool_def)
+        cleaned = clean_tool_definition(tool_def)
+        current_hash = compute_tool_hash(cleaned)
         pinned = self.get_tool_pin(server, tool_name)
 
         if pinned is None:
-            diff, _ = compute_diff_summary(None, clean_tool_definition(tool_def))
+            diff, _ = compute_diff_summary(None, cleaned)
             return "unpinned", diff, current_hash
 
         if pinned.tool_hash != current_hash:
-            diff, _ = compute_diff_summary(pinned.definition, clean_tool_definition(tool_def))
+            diff, _ = compute_diff_summary(pinned.definition, cleaned)
             return "changed", diff, current_hash
 
         return "pinned", None, current_hash
+
+    def check_server(
+        self,
+        server: str,
+        tools: list[dict[str, Any]],
+        server_info: dict[str, Any] | None = None,
+    ) -> tuple[Literal["pinned", "unpinned", "changed"], str | None, str]:
+        """Check server-level pinning status across all tools and serverInfo."""
+        cleaned_tools = [clean_tool_definition(t) for t in tools]
+        current_srv_hash = compute_server_hash(cleaned_tools, server_info)
+        pinned_srv = self.get_server_pin(server)
+
+        if pinned_srv is None:
+            return "unpinned", "server first seen", current_srv_hash
+
+        if pinned_srv.server_hash != current_srv_hash:
+            diffs: list[str] = []
+            if pinned_srv.server_info != (server_info or {}):
+                diffs.append("server_info changed")
+            # Check individual tool status
+            for t in cleaned_tools:
+                t_name = str(t.get("name", ""))
+                st, t_diff, _ = self.check_tool(server, t, mode="audit")
+                if st != "pinned" and t_diff:
+                    diffs.append(f"{t_name}: {t_diff}")
+            return "changed", "; ".join(diffs) or "server hash changed", current_srv_hash
+
+        return "pinned", None, current_srv_hash
 
     def approve_tool(
         self,
@@ -377,28 +425,44 @@ class PinStore:
         tool_name = str(tool_def.get("name", ""))
         cleaned = clean_tool_definition(tool_def)
         tool_hash = compute_tool_hash(cleaned)
+        hashed_fields = sorted(cleaned.keys())
         now_iso = datetime.now(UTC).isoformat()
 
-        pin = ToolPin(tool_hash=tool_hash, definition=cleaned, pinned_at=now_iso)
+        pin = ToolPin(
+            tool_hash=tool_hash,
+            definition=cleaned,
+            pinned_at=now_iso,
+            hashed_fields=hashed_fields,
+        )
 
-        if server not in self.servers:
-            self.servers[server] = ServerPin(
-                server_info=server_info or {},
-                pinned_at=now_iso,
-                tools={},
-            )
+        self._lock_file_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(self._lock_file_path, "a+b") as lock_f:
+            with _pin_file_lock(lock_f):
+                if self.store_path.exists():
+                    try:
+                        self.load(fail_closed=False)
+                    except Exception:
+                        pass
 
-        srv = self.servers[server]
-        if server_info:
-            srv.server_info = server_info
-        srv.tools[tool_name] = pin
+                if server not in self.servers:
+                    self.servers[server] = ServerPin(
+                        server_info=server_info or {},
+                        pinned_at=now_iso,
+                        tools={},
+                    )
 
-        # Recompute server hash
-        tool_defs = [t.definition for t in srv.tools.values()]
-        srv.server_hash = compute_server_hash(tool_defs, srv.server_info)
-        srv.pinned_at = now_iso
+                srv = self.servers[server]
+                if server_info:
+                    srv.server_info = server_info
+                srv.tools[tool_name] = pin
 
-        self.save()
+                # Recompute server hash
+                tool_defs = [t.definition for t in srv.tools.values()]
+                srv.server_hash = compute_server_hash(tool_defs, srv.server_info)
+                srv.pinned_at = now_iso
+
+                self._save_unlocked()
+
         return pin
 
     def approve_server(
@@ -419,6 +483,7 @@ class PinStore:
                 tool_hash=t_hash,
                 definition=cleaned,
                 pinned_at=now_iso,
+                hashed_fields=sorted(cleaned.keys()),
             )
 
         cleaned_tools = [p.definition for p in parsed_tools.values()]
@@ -430,6 +495,16 @@ class PinStore:
             tools=parsed_tools,
             pinned_at=now_iso,
         )
-        self.servers[server] = srv_pin
-        self.save()
+
+        self._lock_file_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(self._lock_file_path, "a+b") as lock_f:
+            with _pin_file_lock(lock_f):
+                if self.store_path.exists():
+                    try:
+                        self.load(fail_closed=False)
+                    except Exception:
+                        pass
+                self.servers[server] = srv_pin
+                self._save_unlocked()
+
         return srv_pin

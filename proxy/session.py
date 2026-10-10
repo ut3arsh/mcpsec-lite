@@ -22,10 +22,31 @@ from mcpsec_core.models import (
     SessionState,
     ToolCall,
 )
-from mcpsec_core.pinning import PinStore
+from mcpsec_core.pinning import PinStore, clean_tool_definition
 from mcpsec_core.policy import check_policy
 from mcpsec_core.taint import update_taint
 from proxy.supervisor import UpstreamManager
+
+
+def extract_model_visible_tool_dict(tool_obj: Any, upstream_tool_name: str) -> dict[str, Any]:
+    """Extract all model-visible fields from tool definition object without losing arbitrary fields."""
+    if isinstance(tool_obj, dict):
+        raw = dict(tool_obj)
+    elif hasattr(tool_obj, "model_dump"):
+        raw = tool_obj.model_dump(by_alias=True, exclude_none=True)
+    elif hasattr(tool_obj, "__dict__"):
+        raw = {k: v for k, v in tool_obj.__dict__.items() if not k.startswith("_")}
+    else:
+        raw = {}
+
+    raw["name"] = upstream_tool_name
+    if "input_schema" in raw and "inputSchema" not in raw:
+        raw["inputSchema"] = raw.pop("input_schema")
+    if "output_schema" in raw and "outputSchema" not in raw:
+        raw["outputSchema"] = raw.pop("output_schema")
+
+    # Clean volatile fields (_meta)
+    return clean_tool_definition(raw)
 
 
 def compute_content_bytes(content: list[Any]) -> int:
@@ -124,6 +145,38 @@ class ProxySession:
             deny_count=self.session_state.deny_count,
         )
 
+    async def handle_list_changed(
+        self,
+        server_name: str,
+        notify_client_callback: Any | None = None,
+    ) -> list[types.Tool]:
+        """Handle tools/list_changed notification from upstream server: re-fetch, diff, log, and notify."""
+        self.audit_logger.log_pin_event(
+            server=server_name,
+            tool=None,
+            action="list_changed_received",
+            old_hash=None,
+            new_hash=None,
+            diff_summary=f"tools/list_changed received from {server_name}",
+            mode=getattr(getattr(self.policy_data, "pinning", None), "mode", "audit")
+            if self.policy_data
+            else "audit",
+            effective_decision="logged",
+            session_id=self.session_id,
+        )
+
+        # Re-fetch and evaluate visible tools
+        tool_list_result = await self.list_tools()
+
+        # If downstream agent callback provided, forward notification
+        if notify_client_callback is not None:
+            if callable(notify_client_callback):
+                res = notify_client_callback()
+                if asyncio.iscoroutine(res):
+                    await res
+
+        return tool_list_result.tools
+
     async def list_tools(self) -> types.ListToolsResult:
         """Return deterministic, sorted union of visible tools according to pinning policy."""
         all_tools = self.upstream_manager.list_all_tools()
@@ -142,19 +195,7 @@ class ProxySession:
             except Exception:
                 server_name, upstream_tool_name = "unknown", t.name
 
-            in_schema = getattr(t, "input_schema", None) or getattr(t, "inputSchema", {})
-            out_schema = getattr(t, "output_schema", None) or getattr(t, "outputSchema", None)
-            tool_dict: dict[str, Any] = {
-                "name": upstream_tool_name,
-                "description": getattr(t, "description", None),
-                "inputSchema": in_schema,
-            }
-            if getattr(t, "title", None) is not None:
-                tool_dict["title"] = t.title
-            if out_schema is not None:
-                tool_dict["outputSchema"] = out_schema
-            if getattr(t, "annotations", None) is not None:
-                tool_dict["annotations"] = t.annotations
+            tool_dict = extract_model_visible_tool_dict(t, upstream_tool_name)
 
             status, diff_summary, new_hash = self.pin_store.check_tool(
                 server=server_name,
@@ -370,18 +411,7 @@ class ProxySession:
             tool_dict: dict[str, Any] = {"name": upstream_tool_name}
             for t in self.upstream_manager.list_all_tools():
                 if t.name == name:
-                    in_schema = getattr(t, "input_schema", None) or getattr(t, "inputSchema", {})
-                    out_schema = getattr(t, "output_schema", None) or getattr(
-                        t, "outputSchema", None
-                    )
-                    tool_dict["description"] = getattr(t, "description", None)
-                    tool_dict["inputSchema"] = in_schema
-                    if getattr(t, "title", None) is not None:
-                        tool_dict["title"] = t.title
-                    if out_schema is not None:
-                        tool_dict["outputSchema"] = out_schema
-                    if getattr(t, "annotations", None) is not None:
-                        tool_dict["annotations"] = t.annotations
+                    tool_dict = extract_model_visible_tool_dict(t, upstream_tool_name)
                     break
 
             pin_status, diff_summary, current_hash = self.pin_store.check_tool(
@@ -398,9 +428,12 @@ class ProxySession:
                 and self.policy_data is not None
                 and getattr(self.policy_data, "pinning", None) is not None
             ):
+                err_code = (
+                    "ERR_UNPINNED_TOOL" if pin_status == "unpinned" else "ERR_TOOL_HASH_MISMATCH"
+                )
                 decision = "deny"
                 decision_layer = "pinning"
-                decision_reason = f"Tool '{server_name}.{upstream_tool_name}' is {pin_status} under strict pinning"
+                decision_reason = f"{err_code}: Tool '{server_name}.{upstream_tool_name}' is {pin_status} under strict pinning"
             else:
                 # 3.2 Policy check
                 policy_decision = check_policy(tool_call, self.policy_data)
