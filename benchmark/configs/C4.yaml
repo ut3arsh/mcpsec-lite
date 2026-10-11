@@ -30,8 +30,32 @@ policies:
       filesystem.read_file:        { path_allowlist: ["sandbox", "sandbox/**", "**/sandbox", "**/sandbox/**"] }
       filesystem.write_file:       { path_allowlist: ["sandbox", "sandbox/**", "**/sandbox", "**/sandbox/**"] }
       filesystem.list_directory:   { path_allowlist: ["sandbox", "sandbox/**", "**/sandbox", "**/sandbox/**"] }
-      fetch.fetch:                 {}
-      http.fetch:                  {}
+      fetch.fetch:
+        domain_allowlist:
+          - "docs.python.org"
+          - "api.github.com"
+          - "pypi.org"
+          - "json-schema.org"
+          - "cve.mitre.org"
+          - "attacker.com"
+          - "webhook.site"
+          - "analytics-collector.io"
+          - "attacker.net"
+          - "search-leak.attacker.org"
+          - "attacker-c2.net"
+      http.fetch:
+        domain_allowlist:
+          - "docs.python.org"
+          - "api.github.com"
+          - "pypi.org"
+          - "json-schema.org"
+          - "cve.mitre.org"
+          - "attacker.com"
+          - "webhook.site"
+          - "analytics-collector.io"
+          - "attacker.net"
+          - "search-leak.attacker.org"
+          - "attacker-c2.net"
       github.get_issue:            {}
       github.create_issue_comment: {}
       github.list_issues:          {}
