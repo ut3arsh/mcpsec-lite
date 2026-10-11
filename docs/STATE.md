@@ -8,6 +8,7 @@
 - Chunk 5.7: pinned `setup-node` to v7.0.0 SHA `820762786026740c76f36085b0efc47a31fe5020` (>= 14 days old, Node 24 runtime; v7.1.0 was published 2026-10-08, only 3 days old). Appended `ATTACK-23` (pure tool mutation rug-pull) to `manifest.json` (23 total scenarios: 14 in-scope, 7 known-gap, 2 out-of-scope). Dev harness outputs raw per-trial CSV to `benchmark/results/dev_20261011/trials.csv` (165 trials). `benchmark/analysis.py` generates all tables directly from `trials.csv` + `manifest.json` with zero hand-edited numbers. Byte-for-byte reproducibility tested and green.
 
 ## Verified Numbers (chunk 5.7 run)
+- **CI Matrix (run 38139373561)**: 6/6 jobs green (`success`) on commit `1f778a0`.
 - **Plain unit suite (`pytest`)**: 179 passed, 2 skipped, 8 deselected, 2 xfailed in 38.80s (gate < 60s passed).
 - **Static checks**: `mypy --strict` clean (64 source files), `ruff check` clean, `ruff format` clean.
 - **Byte-for-byte reproducibility**: `tests/test_benchmark_analysis.py` passes byte-for-byte check on regenerated report.
