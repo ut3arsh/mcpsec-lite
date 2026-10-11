@@ -14,6 +14,8 @@ from mcpsec_core.policy import (
     check_policy,
     get_tool_capabilities,
     load_policy,
+    load_policy_file,
+    load_policy_text,
 )
 
 # Minimal valid policy from policy_schema.md §11
@@ -62,7 +64,7 @@ def test_valid_minimal_policy_loads_cleanly(tmp_path: Path) -> None:
     pol_file = tmp_path / "policy.yaml"
     pol_file.write_text(VALID_POLICY_YAML, encoding="utf-8", newline="\n")
 
-    # Test loading from Path, str, and bytes
+    # Test loading from Path, str, and bytes via load_policy
     p1, h1, w1 = load_policy(pol_file)
     assert p1.version == 1
     assert p1.mode == "enforce"
@@ -74,6 +76,69 @@ def test_valid_minimal_policy_loads_cleanly(tmp_path: Path) -> None:
 
     with pytest.raises(PolicyError):
         load_policy(12345)  # type: ignore[arg-type]
+
+
+def test_load_policy_file_and_text_split(tmp_path: Path) -> None:
+    pol_file = tmp_path / "policy.yaml"
+    pol_file.write_text(VALID_POLICY_YAML, encoding="utf-8", newline="\n")
+
+    # load_policy_file with Path and str path
+    p_from_path, h_from_path, w_from_path = load_policy_file(pol_file)
+    assert p_from_path.version == 1
+    assert len(h_from_path) == 64
+
+    p_from_strpath, h_from_strpath, _ = load_policy_file(str(pol_file))
+    assert h_from_path == h_from_strpath
+
+    # load_policy_text with str and bytes
+    p_from_str, h_from_str, _ = load_policy_text(VALID_POLICY_YAML)
+    p_from_bytes, h_from_bytes, _ = load_policy_text(VALID_POLICY_YAML.encode("utf-8"))
+    assert h_from_str == h_from_bytes == h_from_path
+
+    # Type errors on invalid argument types
+    with pytest.raises(PolicyError, match="load_policy_file requires str or Path"):
+        load_policy_file(12345)  # type: ignore[arg-type]
+
+    with pytest.raises(PolicyError, match="load_policy_text requires str or bytes"):
+        load_policy_text(12345)  # type: ignore[arg-type]
+
+    with pytest.raises(PolicyError, match="load_policy_text requires str or bytes"):
+        load_policy_text(pol_file)  # type: ignore[arg-type]
+
+
+def test_load_policy_text_never_treats_path_like_string_as_file(tmp_path: Path) -> None:
+    pol_file = tmp_path / "policy.yaml"
+    pol_file.write_text(VALID_POLICY_YAML, encoding="utf-8", newline="\n")
+
+    # Existing file path passed to load_policy_text must NOT be read as a file.
+    # It must be parsed as raw YAML text (".../policy.yaml"), which is a string scalar, not a dict.
+    with pytest.raises(PolicyError, match="must be a YAML mapping") as exc_info:
+        load_policy_text(str(pol_file))
+    assert any(e.get("code") == "ERR_POLICY_INVALID_TYPE" for e in exc_info.value.errors)
+
+    # Relative path-like strings must also be treated strictly as text, failing validation as non-mapping
+    with pytest.raises(PolicyError, match="must be a YAML mapping") as exc_info2:
+        load_policy_text("policies/default.yaml")
+    assert any(e.get("code") == "ERR_POLICY_INVALID_TYPE" for e in exc_info2.value.errors)
+
+
+def test_load_policy_file_never_treats_yaml_text_as_file(tmp_path: Path) -> None:
+    # Raw YAML content passed to load_policy_file must NOT be parsed as text.
+    # It must fail because no such file exists on disk.
+    with pytest.raises(PolicyError, match="Policy file not found") as exc_info:
+        load_policy_file(VALID_POLICY_YAML)
+    assert any(e.get("code") == "ERR_POLICY_FILE_NOT_FOUND" for e in exc_info.value.errors)
+
+    # Non-existent file path
+    non_existent = tmp_path / "missing.yaml"
+    with pytest.raises(PolicyError, match="Policy file not found") as exc_info2:
+        load_policy_file(non_existent)
+    assert any(e.get("code") == "ERR_POLICY_FILE_NOT_FOUND" for e in exc_info2.value.errors)
+
+    # Directory is not a regular file
+    with pytest.raises(PolicyError, match="Policy file not found") as exc_info3:
+        load_policy_file(tmp_path)
+    assert any(e.get("code") == "ERR_POLICY_FILE_NOT_FOUND" for e in exc_info3.value.errors)
 
 
 def test_policy_load_idempotent() -> None:

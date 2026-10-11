@@ -28,7 +28,7 @@ import mcp.types as types
 from mcpsec_core.audit import AuditLogger
 from mcpsec_core.models import parse_audit_event
 from mcpsec_core.pinning import PinStore
-from mcpsec_core.policy import Policy, load_policy
+from mcpsec_core.policy import Policy, load_policy_file
 from proxy.session import ProxySession
 from proxy.supervisor import UpstreamManager
 
@@ -345,7 +345,7 @@ class BenchmarkRunner:
         policy_hashes: dict[str, str] = {}
         for cfg in configs:
             cfg_path = self.config_dir / f"{cfg}.yaml"
-            pol, p_hash, _ = load_policy(cfg_path)
+            pol, p_hash, _ = load_policy_file(cfg_path)
             policies[cfg] = pol
             policy_hashes[cfg] = p_hash
 

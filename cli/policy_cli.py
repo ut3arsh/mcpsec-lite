@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 from mcpsec_core.models import ToolCall
-from mcpsec_core.policy import PolicyError, check_policy, load_policy
+from mcpsec_core.policy import PolicyError, check_policy, load_policy_file
 
 
 def validate_policy_file(
@@ -28,7 +28,7 @@ def validate_policy_file(
         return 1
 
     try:
-        policy, p_hash, warnings = load_policy(policy_path)
+        policy, p_hash, warnings = load_policy_file(policy_path)
     except PolicyError as err:
         print(f"Policy validation failed for '{policy_path}':", file=sys.stderr)
         for e in err.errors:

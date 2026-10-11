@@ -16,7 +16,7 @@ from mcp.server.stdio import stdio_server
 
 from mcpsec_core.audit import AuditLogger
 from mcpsec_core.models import LatencyMs
-from mcpsec_core.policy import Policy, PolicyError, load_policy
+from mcpsec_core.policy import Policy, PolicyError, load_policy_file
 from proxy.session import ProxySession
 from proxy.supervisor import UpstreamConfig, UpstreamManager
 
@@ -92,7 +92,9 @@ async def run_proxy(
 
     if config_path.exists():
         try:
-            policy, policy_hash, warnings = load_policy(config_path, check_unenforced_guards=True)
+            policy, policy_hash, warnings = load_policy_file(
+                config_path, check_unenforced_guards=True
+            )
             mode = policy.mode
         except PolicyError as err:
             print(f"Error loading policy from {config_path}: {err}", file=sys.stderr)

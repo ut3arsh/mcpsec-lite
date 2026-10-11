@@ -576,38 +576,24 @@ def validate_and_compile_policy(
     return policy_obj, warnings
 
 
-def load_policy(
-    policy_source: str | bytes | Path,
+def load_policy_text(
+    text: str | bytes,
     check_unenforced_guards: bool = False,
 ) -> tuple[Policy, str, list[str]]:
-    """Load, validate, and compile a policy YAML document.
+    """Load, validate, and compile a policy YAML document from in-memory text or bytes.
 
     Pure & Idempotent:
     - Same bytes -> identical Policy and policy_hash.
     - No side effects.
     - Fails closed on any error.
+    - Never treats text as a file path.
     """
-    raw_bytes: bytes
-    if isinstance(policy_source, Path):
-        with open(policy_source, "rb") as f:
-            raw_bytes = f.read()
-    elif isinstance(policy_source, str):
-        if "\n" in policy_source or "\r" in policy_source:
-            raw_bytes = policy_source.encode("utf-8")
-        else:
-            try:
-                p = Path(policy_source)
-                if p.exists() and p.is_file():
-                    with open(p, "rb") as f:
-                        raw_bytes = f.read()
-                else:
-                    raw_bytes = policy_source.encode("utf-8")
-            except (OSError, ValueError):
-                raw_bytes = policy_source.encode("utf-8")
-    elif isinstance(policy_source, bytes):
-        raw_bytes = policy_source
+    if isinstance(text, str):
+        raw_bytes = text.encode("utf-8")
+    elif isinstance(text, bytes):
+        raw_bytes = text
     else:
-        raise PolicyError(f"Invalid policy source type: {type(policy_source).__name__}")
+        raise PolicyError(f"load_policy_text requires str or bytes, got: {type(text).__name__}")
 
     policy_hash = hashlib.sha256(raw_bytes).hexdigest()
 
@@ -619,10 +605,95 @@ def load_policy(
             errors=[{"code": "ERR_YAML_SYNTAX", "path": "", "message": str(exc)}],
         ) from exc
 
+    if not isinstance(data, dict):
+        raise PolicyError(
+            f"Policy must be a YAML mapping, got {type(data).__name__}",
+            errors=[
+                {
+                    "code": "ERR_POLICY_INVALID_TYPE",
+                    "path": "",
+                    "message": f"Expected dict, got {type(data).__name__}",
+                }
+            ],
+        )
+
     policy, warnings = validate_and_compile_policy(
         data, policy_hash, check_unenforced_guards=check_unenforced_guards
     )
     return policy, policy_hash, warnings
+
+
+def load_policy_file(
+    path: str | Path,
+    check_unenforced_guards: bool = False,
+) -> tuple[Policy, str, list[str]]:
+    """Load, validate, and compile a policy YAML document from a file path on disk.
+
+    Pure & Idempotent:
+    - Reads raw bytes from path and compiles.
+    - Fails closed if file does not exist, is not a regular file, or cannot be read.
+    - Never treats path string as raw YAML content.
+    """
+    if not isinstance(path, (str, Path)):
+        raise PolicyError(f"load_policy_file requires str or Path, got: {type(path).__name__}")
+
+    try:
+        p = Path(path)
+        is_file = p.is_file()
+    except (OSError, ValueError):
+        is_file = False
+
+    if not is_file:
+        raise PolicyError(
+            f"Policy file not found or not a regular file: {path}",
+            errors=[
+                {
+                    "code": "ERR_POLICY_FILE_NOT_FOUND",
+                    "path": str(path),
+                    "message": "File not found",
+                }
+            ],
+        )
+
+    try:
+        with open(p, "rb") as f:
+            raw_bytes = f.read()
+    except OSError as exc:
+        raise PolicyError(
+            f"Error reading policy file: {exc}",
+            errors=[{"code": "ERR_POLICY_READ_ERROR", "path": str(p), "message": str(exc)}],
+        ) from exc
+
+    return load_policy_text(raw_bytes, check_unenforced_guards=check_unenforced_guards)
+
+
+def load_policy(
+    policy_source: str | bytes | Path,
+    check_unenforced_guards: bool = False,
+) -> tuple[Policy, str, list[str]]:
+    """Legacy/convenience loader: dispatches to load_policy_file or load_policy_text.
+
+    Pure & Idempotent:
+    - Same bytes -> identical Policy and policy_hash.
+    - No side effects.
+    - Fails closed on any error.
+    """
+    if isinstance(policy_source, Path):
+        return load_policy_file(policy_source, check_unenforced_guards=check_unenforced_guards)
+    elif isinstance(policy_source, bytes):
+        return load_policy_text(policy_source, check_unenforced_guards=check_unenforced_guards)
+    elif isinstance(policy_source, str):
+        if "\n" in policy_source or "\r" in policy_source:
+            return load_policy_text(policy_source, check_unenforced_guards=check_unenforced_guards)
+        try:
+            p = Path(policy_source)
+            if p.is_file():
+                return load_policy_file(p, check_unenforced_guards=check_unenforced_guards)
+        except (OSError, ValueError):
+            pass
+        return load_policy_text(policy_source, check_unenforced_guards=check_unenforced_guards)
+    else:
+        raise PolicyError(f"Invalid policy source type: {type(policy_source).__name__}")
 
 
 def get_tool_capabilities(tool_id: str, policy: Policy | None) -> list[str]:

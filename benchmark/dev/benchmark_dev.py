@@ -21,7 +21,7 @@ import mcp.types as types
 from mcpsec_core.approvals import ApprovalManager
 from mcpsec_core.audit import AuditLogger
 from mcpsec_core.pinning import PinStore
-from mcpsec_core.policy import Policy, load_policy
+from mcpsec_core.policy import Policy, load_policy_file
 from proxy.session import ProxySession
 from proxy.supervisor import UpstreamManager
 
@@ -871,7 +871,7 @@ async def run_dev_matrix(output_path: Path) -> str:
     config_dir = Path("./benchmark/configs")
     policies: dict[str, Policy] = {}
     for c in ["C0", "C1", "C2", "C3", "C4"]:
-        pol, _, _ = load_policy(config_dir / f"{c}.yaml")
+        pol, _, _ = load_policy_file(config_dir / f"{c}.yaml")
         policies[c] = pol
 
     tool_descriptions = {
