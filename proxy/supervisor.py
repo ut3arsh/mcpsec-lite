@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextvars
 import os
 import sys
 import time
@@ -10,11 +11,30 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import anyio
+import mcp.client.stdio as mcp_stdio
 import mcp.types as types
 from mcp.client.session import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 
 from mcpsec_core.adapters import SERVER_NAME_REGEX, encode_tool_name
+
+# Global hook to capture subprocess PID spawned by stdio_client
+_current_upstream_proc: contextvars.ContextVar[UpstreamProcess | None] = contextvars.ContextVar(
+    "_current_upstream_proc", default=None
+)
+
+_orig_create_process = mcp_stdio._create_platform_compatible_process
+
+
+async def _hooked_create_process(*args: Any, **kwargs: Any) -> Any:
+    proc = await _orig_create_process(*args, **kwargs)
+    upstream = _current_upstream_proc.get()
+    if upstream is not None and hasattr(proc, "pid"):
+        upstream.pid = proc.pid
+    return proc
+
+
+mcp_stdio._create_platform_compatible_process = _hooked_create_process
 
 # Safe base system environment variable allowlists
 SAFE_SYSTEM_ENV_VARS_WIN = frozenset(
@@ -75,8 +95,69 @@ def sanitize_upstream_env(user_env: dict[str, str] | None = None) -> dict[str, s
     return clean_env
 
 
+def _get_descendants_posix(root_pid: int) -> list[int]:
+    """Find all descendant PIDs of root_pid using psutil or /proc."""
+    if root_pid <= 0:
+        return []
+
+    # 1. Try psutil if available
+    try:
+        import psutil  # type: ignore[import-untyped,unused-ignore]
+
+        proc = psutil.Process(root_pid)
+        return [c.pid for c in proc.children(recursive=True)]
+    except Exception:
+        pass
+
+    # 2. Descendant-walk using /proc on Linux
+    from collections import defaultdict
+
+    parent_map: dict[int, list[int]] = defaultdict(list)
+    try:
+        proc_entries = os.listdir("/proc")
+    except OSError:
+        return []
+
+    for entry in proc_entries:
+        if not entry.isdigit():
+            continue
+        try:
+            with open(f"/proc/{entry}/stat", encoding="utf-8", errors="ignore") as f:
+                stat_line = f.read()
+            rparen = stat_line.rfind(")")
+            if rparen == -1:
+                continue
+            rest = stat_line[rparen + 1 :].strip().split()
+            # rest[0] is state, rest[1] is ppid
+            if len(rest) >= 2:
+                ppid = int(rest[1])
+                child_pid = int(entry)
+                parent_map[ppid].append(child_pid)
+        except (OSError, ValueError):
+            continue
+
+    descendants: list[int] = []
+    queue = list(parent_map.get(root_pid, []))
+    visited = set(queue)
+    while queue:
+        curr = queue.pop(0)
+        descendants.append(curr)
+        for child in parent_map.get(curr, []):
+            if child not in visited:
+                visited.add(child)
+                queue.append(child)
+
+    return descendants
+
+
 def kill_process_tree(pid: int) -> None:
-    """Kill entire process tree on Windows and POSIX to avoid orphan children."""
+    """Kill entire process tree on Windows and POSIX to avoid orphan children.
+
+    Guarantees:
+    - Kills the process and all its descendants.
+    - Never kills the caller or the caller's process group.
+    - On POSIX, combines process-group signaling with /proc descendant walk.
+    """
     if pid <= 0:
         return
     if sys.platform == "win32":
@@ -93,17 +174,63 @@ def kill_process_tree(pid: int) -> None:
     else:
         import signal
 
+        caller_pid = os.getpid()
+        caller_pgid = os.getpgid(0)
+
+        # 1. Collect descendants via /proc or psutil before signaling
+        descendants = _get_descendants_posix(pid)
+
+        # 2. If pid has its own process group (start_new_session=True), kill the group
         try:
-            pgid = os.getpgid(pid)
-            if pgid != os.getpgid(0):
-                os.killpg(pgid, signal.SIGKILL)
-            else:
-                os.kill(pid, signal.SIGKILL)
-        except Exception:
+            child_pgid = os.getpgid(pid)
+        except OSError:
+            child_pgid = pid
+
+        if child_pgid > 0 and child_pgid != caller_pgid:
+            try:
+                os.killpg(child_pgid, signal.SIGKILL)
+            except OSError:
+                pass
+
+        # 3. Terminate all discovered descendants individually (deepest first)
+        for d_pid in reversed(descendants):
+            if d_pid != caller_pid and d_pid != caller_pgid:
+                try:
+                    os.kill(d_pid, signal.SIGKILL)
+                except OSError:
+                    pass
+
+        # 4. Terminate the target process itself
+        if pid != caller_pid and pid != caller_pgid:
             try:
                 os.kill(pid, signal.SIGKILL)
-            except Exception:
+            except OSError:
                 pass
+
+
+def is_pid_alive(pid: int) -> bool:
+    """Check whether a given PID is currently active and running."""
+    if pid <= 0:
+        return False
+    if sys.platform == "win32":
+        import ctypes
+        import ctypes.wintypes
+
+        kernel32 = ctypes.windll.kernel32
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+        if not handle:
+            return False
+        code = ctypes.wintypes.DWORD()
+        res = kernel32.GetExitCodeProcess(handle, ctypes.byref(code))
+        kernel32.CloseHandle(handle)
+        return bool(res and code.value == 259)
+    else:
+        try:
+            os.kill(pid, 0)
+            return True
+        except OSError:
+            return False
 
 
 @dataclass
@@ -134,6 +261,7 @@ class UpstreamProcess:
         self.sleep_fn = sleep_fn
         self.time_fn = time_fn
         self.session: ClientSession | None = None
+        self.pid: int | None = None
         self.is_healthy = False
         self.restart_count = 0
         self.raw_tools: list[types.Tool] = []
@@ -166,46 +294,79 @@ class UpstreamProcess:
             cwd=self.config.cwd,
         )
 
-        try:
-            async with stdio_client(params) as (read_stream, write_stream):
-                async with ClientSession(read_stream, write_stream) as session:
-                    with anyio.fail_after(self.config.start_timeout):
-                        await session.initialize()
-                        tools_res = await session.list_tools()
+        while not self._stop_event.is_set():
+            token = _current_upstream_proc.set(self)
+            try:
+                async with stdio_client(params) as (read_stream, write_stream):
+                    async with ClientSession(read_stream, write_stream) as session:
+                        with anyio.fail_after(self.config.start_timeout):
+                            await session.initialize()
+                            tools_res = await session.list_tools()
 
-                    # Discover and namespace tools
-                    self.raw_tools = list(tools_res.tools)
-                    self.exposed_tools = []
+                        # Discover and namespace tools
+                        self.raw_tools = list(tools_res.tools)
+                        self.exposed_tools = []
 
-                    for t in self.raw_tools:
-                        exposed_name = encode_tool_name(self.config.name, t.name)
-                        schema = getattr(t, "input_schema", None) or getattr(t, "inputSchema", {})
-                        exposed_tool = types.Tool(
-                            name=exposed_name,
-                            description=t.description,
-                            input_schema=schema,
-                        )
-                        self.exposed_tools.append(exposed_tool)
+                        for t in self.raw_tools:
+                            exposed_name = encode_tool_name(self.config.name, t.name)
+                            schema = getattr(t, "input_schema", None) or getattr(
+                                t, "inputSchema", {}
+                            )
+                            exposed_tool = types.Tool(
+                                name=exposed_name,
+                                description=t.description,
+                                input_schema=schema,
+                            )
+                            self.exposed_tools.append(exposed_tool)
 
-                    self.session = session
-                    self.is_healthy = True
-                    self.start_error = None
-                    self._ready_event.set()
+                        self.session = session
+                        self.is_healthy = True
+                        self.start_error = None
+                        self._ready_event.set()
 
-                    # Wait until stop is signaled
-                    await self._stop_event.wait()
-        except Exception as exc:
-            self.is_healthy = False
-            self.session = None
-            self.start_error = exc
-            self._ready_event.set()
-        finally:
-            self.is_healthy = False
-            self.session = None
+                        # Supervise process liveness until stop is signaled
+                        while not self._stop_event.is_set():
+                            if self.pid is not None and not is_pid_alive(self.pid):
+                                raise RuntimeError(
+                                    f"Upstream process {self.pid} terminated unexpectedly"
+                                )
+                            with anyio.move_on_after(0.2):
+                                await self._stop_event.wait()
+            except Exception as exc:
+                self.is_healthy = False
+                self.session = None
+                self.start_error = exc
+                self._ready_event.set()
+                if self._stop_event.is_set():
+                    break
+                if self.restart_count < self.config.max_restarts:
+                    self.restart_count += 1
+                    # Ensure any orphaned descendants from this crash are cleanly reaped
+                    if self.pid is not None:
+                        kill_process_tree(self.pid)
+                        self.pid = None
+                    self._ready_event = anyio.Event()
+                    await self.sleep_fn(0.1)
+                    continue
+                else:
+                    break
+            finally:
+                _current_upstream_proc.reset(token)
+                self.is_healthy = False
+                self.session = None
+                if self.pid is not None:
+                    kill_process_tree(self.pid)
+                    self.pid = None
 
     async def wait_ready(self) -> None:
-        """Wait for the worker task to complete startup initialization."""
-        await self._ready_event.wait()
+        """Wait for the worker task to complete startup initialization or recovery."""
+        while not self.is_healthy and not self._stop_event.is_set():
+            if self.restart_count >= self.config.max_restarts and not self.is_healthy:
+                break
+            await self._ready_event.wait()
+            if self.is_healthy or self.restart_count >= self.config.max_restarts:
+                break
+            await self.sleep_fn(0.05)
 
     async def call_tool(
         self,
@@ -224,6 +385,7 @@ class UpstreamProcess:
                 )
         except Exception as exc:
             self.is_healthy = False
+            self._ready_event = anyio.Event()
             raise RuntimeError(
                 f"Error calling tool '{tool_name}' on upstream '{self.config.name}': {exc}"
             ) from exc
