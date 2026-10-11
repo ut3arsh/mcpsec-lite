@@ -32,14 +32,16 @@ if sys.platform == "win32":
         fd = file_obj.fileno()
         with _APPROVAL_PROCESS_LOCK:
             locked = False
-            for _ in range(500):
+            for _ in range(3000):
                 try:
                     os.lseek(fd, 0, os.SEEK_SET)
                     msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
                     locked = True
                     break
                 except OSError:
-                    time.sleep(0.001)
+                    time.sleep(0.002)
+            if not locked:
+                raise OSError("Timeout acquiring approvals file lock on Windows")
             try:
                 yield
             finally:
