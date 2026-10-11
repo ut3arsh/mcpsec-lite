@@ -1,0 +1,8 @@
+# Enforce LF endings on all platforms to prevent CRLF skew across CI and dev machines
+* text=auto eol=lf
+*.md text eol=lf
+*.csv text eol=lf
+*.json text eol=lf
+*.py text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf

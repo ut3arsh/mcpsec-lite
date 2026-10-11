@@ -47,8 +47,8 @@ def test_byte_for_byte_reproducibility() -> None:
     # Pure function determinism
     assert run1 == run2
 
-    # Byte-for-byte identity against committed file
-    expected_bytes = report_path.read_bytes()
+    # Byte-for-byte identity against committed file (handling git checkout autocrlf)
+    expected_bytes = report_path.read_bytes().replace(b"\r\n", b"\n")
     actual_bytes = run1.encode("utf-8")
 
     assert actual_bytes == expected_bytes, "Regenerating analysis report failed byte-for-byte check"
