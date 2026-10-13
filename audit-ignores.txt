@@ -1,0 +1,3 @@
+# audit-ignores.txt — dated, justified vulnerability ignores for pip-audit.
+# Format: <VULN_ID> <YYYY-MM-DD> <JUSTIFICATION>
+# Lines starting with '#' and blank lines are ignored.
