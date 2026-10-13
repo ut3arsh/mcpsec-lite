@@ -44,8 +44,7 @@ jobs:
           python -m pip install pip-audit pytest-cov pytest pytest-asyncio pytest-timeout hypothesis ruff mypy types-pyyaml
 
       - name: Run Security Vulnerability Audit
-        run: python -m pip_audit --strict || echo "Security audit completed"
-        continue-on-error: true
+        run: python scripts/run_audit.py
 
       - name: Code Formatting Check (ruff format)
         run: ruff format --check .
@@ -54,17 +53,23 @@ jobs:
         run: ruff check .
 
       - name: Type Checking (mypy strict)
-        run: mypy --strict mcpsec_core proxy cli tests benchmark
+        run: mypy --strict mcpsec_core proxy cli tests benchmark scripts
 
       - name: Run Core Suite with Coverage Gate (CI Hypothesis Profile)
         env:
           HYPOTHESIS_PROFILE: ci
         run: >
-          pytest -o "addopts="
+          pytest -rs -o "addopts="
           --cov=mcpsec_core
           --cov-branch
           --cov-report=term-missing
+          --cov-report=json:coverage_core.json
+          --junitxml=test-results.xml
           --cov-fail-under=90
+
+      - name: Record Test & Coverage Step Summary
+        if: always()
+        run: python scripts/record_step_summary.py
 
       - name: Report Proxy and CLI Coverage (Report Only)
         run: >
