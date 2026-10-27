@@ -281,9 +281,11 @@ class ProxySession:
             return await self._call_tool_internal(name, arguments)
 
     async def _await_approval(self, call_id: str, timeout_seconds: float) -> bool:
-        """Poll and await operator approval decision until timeout."""
-        start = time.perf_counter()
-        while (time.perf_counter() - start) < timeout_seconds:
+        """Await operator approval decision until notified or timeout."""
+        event = anyio.Event()
+        self.approval_manager.register_listener(call_id, event)
+        try:
+            # Check immediately before waiting
             all_apprs = self.approval_manager.get_all_approvals()
             if call_id in all_apprs:
                 status = all_apprs[call_id].status
@@ -291,10 +293,20 @@ class ProxySession:
                     return True
                 elif status in ("denied", "timeout"):
                     return False
-            await asyncio.sleep(0.02)
 
-        self.approval_manager.record_timeout(call_id)
-        return False
+            with anyio.move_on_after(timeout_seconds) as cancel_scope:
+                await event.wait()
+
+            if cancel_scope.cancel_called:
+                self.approval_manager.record_timeout(call_id)
+                return False
+
+            all_apprs = self.approval_manager.get_all_approvals()
+            if call_id in all_apprs:
+                return all_apprs[call_id].status == "approved"
+            return False
+        finally:
+            self.approval_manager.unregister_listener(call_id)
 
     async def _call_tool_internal(
         self,
