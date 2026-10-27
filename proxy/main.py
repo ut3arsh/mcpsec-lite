@@ -120,13 +120,21 @@ async def run_proxy(
         patterns = redaction_cfg.get("patterns")
         never_log_fields = redaction_cfg.get("never_log_fields")
 
+    # In strict pinning mode, fsync is automatically enabled per audit_log_schema.md
+    is_strict_pinning = (
+        policy is not None
+        and getattr(policy, "pinning", None) is not None
+        and getattr(policy.pinning, "mode", None) == "strict"
+    )
+    effective_fsync = fsync or is_strict_pinning
+
     audit_logger = AuditLogger(
         log_path=audit_log_path,
         log_args=log_args_mode,
         patterns=patterns,
         never_log_fields=never_log_fields,
         tamper_evident=tamper_evident,
-        fsync=fsync,
+        fsync=effective_fsync,
     )
 
     # 1. Parse and initialize UpstreamManager

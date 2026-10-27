@@ -278,30 +278,13 @@ class AuditLogger:
     def _write_event_to_disk(self, event: AuditEvent) -> None:
         """Write serialized event to disk with rotation and optional fsync."""
         with self._lock:
-            line_str = event.model_dump_json(exclude_none=False)
-            line_bytes = line_str.encode("utf-8")
+            # Estimate serialized size
+            pre_str = event.model_dump_json(exclude_none=False)
+            new_bytes_len = len(pre_str.encode("utf-8")) + 1
 
             if self.log_path:
-                self._maybe_rotate_unlocked(len(line_bytes) + 1)
-                # Re-assign seq if rotation happened before write
-                if self._seq == 0:
-                    self._seq = 1
-                    event.seq = 1
-                    # Recalculate JSON after seq reset
-                    line_str = event.model_dump_json(exclude_none=False)
-                    line_bytes = line_str.encode("utf-8")
-                    if self.tamper_evident:
-                        self._prev_hash = hashlib.sha256(line_bytes).hexdigest()
+                self._maybe_rotate_unlocked(new_bytes_len)
 
-                with open(self.log_path, "a", encoding="utf-8") as f:
-                    f.write(line_str + "\n")
-                    f.flush()
-                    if self.fsync:
-                        os.fsync(f.fileno())
-
-    def log_event(self, event: AuditEvent, sync: bool = False) -> AuditEvent:
-        """Write or enqueue a typed audit event to the log."""
-        with self._lock:
             self._seq += 1
             event.seq = self._seq
             if self.tamper_evident:
@@ -313,6 +296,15 @@ class AuditLogger:
             if self.tamper_evident:
                 self._prev_hash = hashlib.sha256(line_bytes).hexdigest()
 
+            if self.log_path:
+                with open(self.log_path, "a", encoding="utf-8") as f:
+                    f.write(line_str + "\n")
+                    f.flush()
+                    if self.fsync:
+                        os.fsync(f.fileno())
+
+    def log_event(self, event: AuditEvent, sync: bool = False) -> AuditEvent:
+        """Write or enqueue a typed audit event to the log."""
         if self._queue is not None and not sync:
             # Enqueue with backpressure (blocks if queue is full)
             self._queue.put((event, None))
