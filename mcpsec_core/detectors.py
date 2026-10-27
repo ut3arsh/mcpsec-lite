@@ -22,7 +22,8 @@ MAX_SCAN_BYTES = 256 * 1024
 AWS_KEY_REGEX = re.compile(r"\bAKIA[0-9A-Z]{16}\b")
 GITHUB_TOKEN_REGEX = re.compile(r"\b(?:ghp_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{22,82})\b")
 PRIVATE_KEY_REGEX = re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----")
-HIGH_ENTROPY_BLOB_REGEX = re.compile(r"\b[A-Za-z0-9+/]{64,}={0,2}\b")
+HIGH_ENTROPY_BLOB_REGEX = re.compile(r"\b[A-Za-z0-9+/_-]{64,}={0,2}\b")
+HEX_BLOB_REGEX = re.compile(r"\b[0-9a-fA-F]{64,}\b")
 
 # Response injection heuristics
 BIDI_ZERO_WIDTH_REGEX = re.compile(r"[\u200B-\u200D\uFEFF\u200E\u200F\u202A-\u202E\u2066-\u2069]")
@@ -45,6 +46,38 @@ def _calculate_shannon_entropy(data: str) -> float:
         p = count / length
         entropy -= p * math.log2(p)
     return entropy
+
+
+def _extract_text_from_mcp_content(item: Any) -> str:
+    """Extract model-visible text from any MCP content item."""
+    if hasattr(item, "text") and isinstance(item.text, str):
+        return item.text
+    if hasattr(item, "resource"):
+        res = item.resource
+        if hasattr(res, "text") and isinstance(res.text, str):
+            return res.text
+        if hasattr(res, "blob") and isinstance(res.blob, str):
+            return res.blob
+        if isinstance(res, dict):
+            if "text" in res and isinstance(res["text"], str):
+                return res["text"]
+            if "blob" in res and isinstance(res["blob"], str):
+                return res["blob"]
+    if isinstance(item, dict):
+        if "text" in item and isinstance(item["text"], str):
+            return item["text"]
+        if "resource" in item and isinstance(item["resource"], dict):
+            res_dict = item["resource"]
+            if "text" in res_dict and isinstance(res_dict["text"], str):
+                return res_dict["text"]
+            if "blob" in res_dict and isinstance(res_dict["blob"], str):
+                return res_dict["blob"]
+        import json
+
+        return json.dumps(item, ensure_ascii=False)
+    if isinstance(item, str):
+        return item
+    return str(item)
 
 
 def scan_arguments(args: Any) -> list[str]:
@@ -76,7 +109,9 @@ def scan_arguments(args: Any) -> list[str]:
         blob_match = HIGH_ENTROPY_BLOB_REGEX.search(text_repr)
         if blob_match:
             blob = blob_match.group(0)
-            if _calculate_shannon_entropy(blob) > 4.5:
+            is_hex = all(c in "0123456789abcdefABCDEF" for c in blob)
+            entropy = _calculate_shannon_entropy(blob)
+            if (is_hex and entropy > 3.5) or (not is_hex and entropy > 4.5):
                 flags.append("secret:high_entropy_blob")
 
     except Exception:
@@ -102,17 +137,11 @@ def scan_response(content: Any, byte_cap: int = MAX_SCAN_BYTES) -> tuple[list[st
         if isinstance(content, str):
             extracted_text = content
         elif isinstance(content, list):
-            parts: list[str] = []
-            for item in content:
-                if hasattr(item, "text") and isinstance(item.text, str):
-                    parts.append(item.text)
-                elif isinstance(item, dict) and "text" in item:
-                    parts.append(str(item["text"]))
-                elif isinstance(item, str):
-                    parts.append(item)
-            extracted_text = "\n".join(parts)
+            extracted_text = "\n".join(_extract_text_from_mcp_content(item) for item in content)
         elif isinstance(content, dict):
-            extracted_text = str(content.get("text", str(content)))
+            extracted_text = _extract_text_from_mcp_content(content)
+        elif hasattr(content, "text") or hasattr(content, "resource"):
+            extracted_text = _extract_text_from_mcp_content(content)
         else:
             extracted_text = str(content)
 
