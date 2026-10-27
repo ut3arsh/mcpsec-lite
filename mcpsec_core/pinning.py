@@ -33,27 +33,45 @@ BIDI_ZERO_WIDTH_REGEX = re.compile(r"[\u200B-\u200D\uFEFF\u200E\u200F\u202A-\u20
 # Volatile fields explicitly ignored during tool definition hashing
 VOLATILE_TOOL_FIELDS = frozenset({"_meta"})
 
+DEFAULT_LOCK_TIMEOUT_SECONDS: float = 5.0
+
+
+class LockTimeout(TimeoutError):
+    """Raised when acquiring a cross-process or in-process lock exceeds the timeout."""
+
+    pass
+
+
 _PIN_PROCESS_LOCK = threading.RLock()
 
 if sys.platform == "win32":
     import msvcrt
 
     @contextlib.contextmanager
-    def _pin_file_lock(file_obj: Any) -> Iterator[None]:
+    def _pin_file_lock(
+        file_obj: Any, timeout: float = DEFAULT_LOCK_TIMEOUT_SECONDS
+    ) -> Iterator[None]:
         """Lock file on Windows using msvcrt with threading lock and retries."""
         fd = file_obj.fileno()
-        with _PIN_PROCESS_LOCK:
+        acquired_thread_lock = _PIN_PROCESS_LOCK.acquire(timeout=timeout)
+        if not acquired_thread_lock:
+            raise LockTimeout(f"Timeout acquiring in-process PinStore lock after {timeout}s")
+        try:
+            deadline = time.monotonic() + timeout
+            poll_interval = 0.005
             locked = False
-            for _ in range(3000):
+            while True:
                 try:
                     os.lseek(fd, 0, os.SEEK_SET)
                     msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
                     locked = True
                     break
                 except OSError:
-                    time.sleep(0.002)
-            if not locked:
-                raise OSError("Timeout acquiring PinStore file lock on Windows")
+                    if time.monotonic() >= deadline:
+                        raise LockTimeout(
+                            f"Timeout acquiring PinStore file lock on Windows after {timeout}s"
+                        ) from None
+                    time.sleep(poll_interval)
             try:
                 yield
             finally:
@@ -64,22 +82,45 @@ if sys.platform == "win32":
                         msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
                     except Exception:
                         pass
+        finally:
+            _PIN_PROCESS_LOCK.release()
 else:
     import fcntl
 
     @contextlib.contextmanager
-    def _pin_file_lock(file_obj: Any) -> Iterator[None]:
+    def _pin_file_lock(
+        file_obj: Any, timeout: float = DEFAULT_LOCK_TIMEOUT_SECONDS
+    ) -> Iterator[None]:
         """Lock file on POSIX using fcntl and threading lock."""
         fd = file_obj.fileno()
-        with _PIN_PROCESS_LOCK:
+        acquired_thread_lock = _PIN_PROCESS_LOCK.acquire(timeout=timeout)
+        if not acquired_thread_lock:
+            raise LockTimeout(f"Timeout acquiring in-process PinStore lock after {timeout}s")
+        try:
+            deadline = time.monotonic() + timeout
+            poll_interval = 0.005
+            locked = False
+            while True:
+                try:
+                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    locked = True
+                    break
+                except (BlockingIOError, OSError):
+                    if time.monotonic() >= deadline:
+                        raise LockTimeout(
+                            f"Timeout acquiring PinStore file lock on POSIX after {timeout}s"
+                        ) from None
+                    time.sleep(poll_interval)
             try:
-                fcntl.flock(fd, fcntl.LOCK_EX)
                 yield
             finally:
-                try:
-                    fcntl.flock(fd, fcntl.LOCK_UN)
-                except Exception:
-                    pass
+                if locked:
+                    try:
+                        fcntl.flock(fd, fcntl.LOCK_UN)
+                    except Exception:
+                        pass
+        finally:
+            _PIN_PROCESS_LOCK.release()
 
 
 def check_pinning(
@@ -284,9 +325,14 @@ class ServerPin:
 class PinStore:
     """Thread-safe, process-safe, versioned pin store backed by pins.json."""
 
-    def __init__(self, store_path: Path | str) -> None:
+    def __init__(
+        self,
+        store_path: Path | str,
+        lock_timeout: float = DEFAULT_LOCK_TIMEOUT_SECONDS,
+    ) -> None:
         self.store_path = Path(store_path)
         self._lock_file_path = self.store_path.with_suffix(".lock")
+        self.lock_timeout = lock_timeout
         self.schema_version = 1
         self.servers: dict[str, ServerPin] = {}
 
@@ -376,7 +422,7 @@ class PinStore:
 
         self._lock_file_path.parent.mkdir(parents=True, exist_ok=True)
         with open(self._lock_file_path, "a+b") as lock_f:
-            with _pin_file_lock(lock_f):
+            with _pin_file_lock(lock_f, timeout=self.lock_timeout):
                 self._load_unlocked(fail_closed=fail_closed)
 
     def _save_unlocked(self) -> None:
@@ -427,7 +473,7 @@ class PinStore:
         """Atomically save pin store with fsync, cross-platform locking, and replace."""
         self._lock_file_path.parent.mkdir(parents=True, exist_ok=True)
         with open(self._lock_file_path, "a+b") as lock_f:
-            with _pin_file_lock(lock_f):
+            with _pin_file_lock(lock_f, timeout=self.lock_timeout):
                 self._save_unlocked()
 
     def get_tool_pin(self, server: str, tool: str) -> ToolPin | None:
@@ -511,7 +557,7 @@ class PinStore:
 
         self._lock_file_path.parent.mkdir(parents=True, exist_ok=True)
         with open(self._lock_file_path, "a+b") as lock_f:
-            with _pin_file_lock(lock_f):
+            with _pin_file_lock(lock_f, timeout=self.lock_timeout):
                 if self.store_path.exists():
                     try:
                         self._load_unlocked(fail_closed=False)
@@ -572,7 +618,7 @@ class PinStore:
 
         self._lock_file_path.parent.mkdir(parents=True, exist_ok=True)
         with open(self._lock_file_path, "a+b") as lock_f:
-            with _pin_file_lock(lock_f):
+            with _pin_file_lock(lock_f, timeout=self.lock_timeout):
                 if self.store_path.exists():
                     try:
                         self._load_unlocked(fail_closed=False)

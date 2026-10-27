@@ -21,27 +21,43 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
+DEFAULT_LOCK_TIMEOUT_SECONDS: float = 5.0
+
+
+class LockTimeout(TimeoutError):
+    """Raised when acquiring a cross-process or in-process lock exceeds the timeout."""
+
+    pass
+
+
 _APPROVAL_PROCESS_LOCK = threading.RLock()
 
 if sys.platform == "win32":
     import msvcrt
 
     @contextlib.contextmanager
-    def file_lock(file_obj: Any) -> Iterator[None]:
+    def file_lock(file_obj: Any, timeout: float = DEFAULT_LOCK_TIMEOUT_SECONDS) -> Iterator[None]:
         """Lock file on Windows using msvcrt with threading lock and retries."""
         fd = file_obj.fileno()
-        with _APPROVAL_PROCESS_LOCK:
+        acquired_thread_lock = _APPROVAL_PROCESS_LOCK.acquire(timeout=timeout)
+        if not acquired_thread_lock:
+            raise LockTimeout(f"Timeout acquiring in-process approvals lock after {timeout}s")
+        try:
+            deadline = time.monotonic() + timeout
+            poll_interval = 0.005
             locked = False
-            for _ in range(3000):
+            while True:
                 try:
                     os.lseek(fd, 0, os.SEEK_SET)
                     msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
                     locked = True
                     break
                 except OSError:
-                    time.sleep(0.002)
-            if not locked:
-                raise OSError("Timeout acquiring approvals file lock on Windows")
+                    if time.monotonic() >= deadline:
+                        raise LockTimeout(
+                            f"Timeout acquiring approvals file lock on Windows after {timeout}s"
+                        ) from None
+                    time.sleep(poll_interval)
             try:
                 yield
             finally:
@@ -52,22 +68,43 @@ if sys.platform == "win32":
                         msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
                     except Exception:
                         pass
+        finally:
+            _APPROVAL_PROCESS_LOCK.release()
 else:
     import fcntl
 
     @contextlib.contextmanager
-    def file_lock(file_obj: Any) -> Iterator[None]:
+    def file_lock(file_obj: Any, timeout: float = DEFAULT_LOCK_TIMEOUT_SECONDS) -> Iterator[None]:
         """Lock file on POSIX using fcntl and threading lock."""
         fd = file_obj.fileno()
-        with _APPROVAL_PROCESS_LOCK:
+        acquired_thread_lock = _APPROVAL_PROCESS_LOCK.acquire(timeout=timeout)
+        if not acquired_thread_lock:
+            raise LockTimeout(f"Timeout acquiring in-process approvals lock after {timeout}s")
+        try:
+            deadline = time.monotonic() + timeout
+            poll_interval = 0.005
+            locked = False
+            while True:
+                try:
+                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    locked = True
+                    break
+                except (BlockingIOError, OSError):
+                    if time.monotonic() >= deadline:
+                        raise LockTimeout(
+                            f"Timeout acquiring approvals file lock on POSIX after {timeout}s"
+                        ) from None
+                    time.sleep(poll_interval)
             try:
-                fcntl.flock(fd, fcntl.LOCK_EX)
                 yield
             finally:
-                try:
-                    fcntl.flock(fd, fcntl.LOCK_UN)
-                except Exception:
-                    pass
+                if locked:
+                    try:
+                        fcntl.flock(fd, fcntl.LOCK_UN)
+                    except Exception:
+                        pass
+        finally:
+            _APPROVAL_PROCESS_LOCK.release()
 
 
 @dataclass
@@ -92,19 +129,43 @@ class PendingApproval:
 class ApprovalManager:
     """Manages append-only approval log and derived state."""
 
-    def __init__(self, log_path: Path | str = "pending_approvals.jsonl") -> None:
+    def __init__(
+        self,
+        log_path: Path | str = "pending_approvals.jsonl",
+        lock_timeout: float = DEFAULT_LOCK_TIMEOUT_SECONDS,
+    ) -> None:
         self.log_path = Path(log_path)
+        self.lock_timeout = lock_timeout
         self._listeners: dict[str, Any] = {}
         self._approvals: dict[str, PendingApproval] = {}
         self._last_read_offset: int = 0
         self._manager_lock = threading.RLock()
+
+    def register_listener(self, call_id: str, listener: Any) -> None:
+        """Register a listener (e.g. threading.Event or asyncio.Event) for wake-up."""
+        with self._manager_lock:
+            self._listeners[call_id] = listener
+
+    def unregister_listener(self, call_id: str) -> None:
+        """Remove a previously registered listener."""
+        with self._manager_lock:
+            self._listeners.pop(call_id, None)
+
+    def _notify_listener(self, call_id: str) -> None:
+        """Notify any active listener waiting on this call_id."""
+        listener = self._listeners.get(call_id)
+        if listener is not None:
+            if hasattr(listener, "set"):
+                listener.set()
+            elif callable(listener):
+                listener()
 
     def _sync_from_disk(self) -> None:
         """Incrementally read new lines from log_path into self._approvals."""
         if not self.log_path.exists():
             return
         with open(self.log_path, encoding="utf-8") as f:
-            with file_lock(f):
+            with file_lock(f, timeout=self.lock_timeout):
                 f.seek(self._last_read_offset)
                 for line_str in f:
                     line = line_str.strip()
@@ -160,7 +221,7 @@ class ApprovalManager:
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
         with self._manager_lock:
             with open(self.log_path, "a+", encoding="utf-8") as f:
-                with file_lock(f):
+                with file_lock(f, timeout=self.lock_timeout):
                     f.seek(0, os.SEEK_END)
                     line = json.dumps(event_data, separators=(",", ":"))
                     f.write(line + "\n")
@@ -231,29 +292,27 @@ class ApprovalManager:
         reason: str = "Approved by operator",
     ) -> bool:
         """Approve a pending request (idempotent)."""
-        all_apprs = self.get_all_approvals()
-        if call_id not in all_apprs:
-            return False
-        appr = all_apprs[call_id]
-        if appr.status == "approved":
-            return True  # Already approved, idempotent no-op
-        if appr.status in ("denied", "timeout"):
-            return False  # Terminal state reached
+        with self._manager_lock:
+            all_apprs = self.get_all_approvals()
+            if call_id not in all_apprs:
+                return False
+            appr = all_apprs[call_id]
+            if appr.status == "approved":
+                return True  # Already approved, idempotent no-op
+            if appr.status in ("denied", "timeout"):
+                return False  # Terminal state reached
 
-        event = {
-            "event": "approved",
-            "call_id": call_id,
-            "operator": operator,
-            "reason": reason,
-            "timestamp": datetime.now(UTC).isoformat(),
-        }
-        self._append_event(event)
+            event = {
+                "event": "approved",
+                "call_id": call_id,
+                "operator": operator,
+                "reason": reason,
+                "timestamp": datetime.now(UTC).isoformat(),
+            }
+            self._append_event(event)
 
-        # Notify any active in-process listener
-        if call_id in self._listeners:
-            self._listeners[call_id].set()
-
-        return True
+            self._notify_listener(call_id)
+            return True
 
     def deny(
         self,
@@ -262,41 +321,40 @@ class ApprovalManager:
         reason: str = "Denied by operator",
     ) -> bool:
         """Deny a pending request (idempotent)."""
-        all_apprs = self.get_all_approvals()
-        if call_id not in all_apprs:
-            return False
-        appr = all_apprs[call_id]
-        if appr.status == "denied":
-            return True  # Already denied, idempotent no-op
-        if appr.status in ("approved", "timeout"):
-            return False  # Terminal state reached
+        with self._manager_lock:
+            all_apprs = self.get_all_approvals()
+            if call_id not in all_apprs:
+                return False
+            appr = all_apprs[call_id]
+            if appr.status == "denied":
+                return True  # Already denied, idempotent no-op
+            if appr.status in ("approved", "timeout"):
+                return False  # Terminal state reached
 
-        event = {
-            "event": "denied",
-            "call_id": call_id,
-            "operator": operator,
-            "reason": reason,
-            "timestamp": datetime.now(UTC).isoformat(),
-        }
-        self._append_event(event)
-
-        if call_id in self._listeners:
-            self._listeners[call_id].set()
-
-        return True
-
-    def record_timeout(self, call_id: str) -> None:
-        """Record timeout expiration for a request."""
-        all_apprs = self.get_all_approvals()
-        if call_id in all_apprs and all_apprs[call_id].status == "pending":
             event = {
-                "event": "timeout",
+                "event": "denied",
                 "call_id": call_id,
+                "operator": operator,
+                "reason": reason,
                 "timestamp": datetime.now(UTC).isoformat(),
             }
             self._append_event(event)
-            if call_id in self._listeners:
-                self._listeners[call_id].set()
+
+            self._notify_listener(call_id)
+            return True
+
+    def record_timeout(self, call_id: str) -> None:
+        """Record timeout expiration for a request."""
+        with self._manager_lock:
+            all_apprs = self.get_all_approvals()
+            if call_id in all_apprs and all_apprs[call_id].status == "pending":
+                event = {
+                    "event": "timeout",
+                    "call_id": call_id,
+                    "timestamp": datetime.now(UTC).isoformat(),
+                }
+                self._append_event(event)
+                self._notify_listener(call_id)
 
     def clear_taint(
         self,
