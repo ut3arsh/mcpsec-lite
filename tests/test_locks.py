@@ -12,8 +12,10 @@ from __future__ import annotations
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 
+import anyio
 import pytest
 
 from mcpsec_core.approvals import _APPROVAL_PROCESS_LOCK, ApprovalManager, file_lock
@@ -235,3 +237,63 @@ def test_in_process_thread_lock_timeout_approvals(tmp_path: Path) -> None:
     finally:
         release_evt.set()
         th.join(timeout=2.0)
+
+
+@pytest.mark.anyio
+@pytest.mark.timeout(10.0)
+async def test_asyncio_loop_stays_responsive_under_lock_contention(tmp_path: Path) -> None:
+    """A ticker task running on the asyncio loop maintains max delay < 50ms while a thread waits on a lock."""
+    store_file = tmp_path / "pins.json"
+    lock_file = store_file.with_suffix(".lock")
+    lock_file.touch()
+
+    # Subprocess holds lock
+    proc = subprocess.Popen(
+        [sys.executable, "-u", "-c", _LOCK_HELPER_SCRIPT, str(lock_file)],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    assert proc.stdout is not None
+    line = proc.stdout.readline()
+    assert line.strip() == "LOCKED"
+
+    store = PinStore(store_file, lock_timeout=2.0)
+
+    ticks: list[float] = []
+    stop_event = anyio.Event()
+
+    async def ticker() -> None:
+        while not stop_event.is_set():
+            ticks.append(time.perf_counter())
+            await anyio.sleep(0.01)
+
+    async def lock_worker() -> None:
+        # Offloaded to thread; waits until lock released
+        await anyio.to_thread.run_sync(store.load, False)
+
+    try:
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(ticker)
+            tg.start_soon(lock_worker)
+
+            # Hold lock for 150ms while loop continues ticking
+            await anyio.sleep(0.15)
+            # Release the lock by closing stdin
+            if proc.stdin:
+                proc.stdin.close()
+            proc.wait(timeout=2.0)
+
+            # Wait a moment for worker to complete
+            await anyio.sleep(0.05)
+            stop_event.set()
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+
+    assert len(ticks) >= 10, f"Expected at least 10 ticks, got {len(ticks)}"
+    delays = [ticks[i + 1] - ticks[i] for i in range(len(ticks) - 1)]
+    max_delay_ms = max(delays) * 1000.0
+    # Max delay must be strictly < 50ms
+    assert max_delay_ms < 50.0, f"Asyncio loop delayed by {max_delay_ms:.2f}ms (must be < 50ms)"

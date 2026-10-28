@@ -33,7 +33,9 @@ BIDI_ZERO_WIDTH_REGEX = re.compile(r"[\u200B-\u200D\uFEFF\u200E\u200F\u202A-\u20
 # Volatile fields explicitly ignored during tool definition hashing
 VOLATILE_TOOL_FIELDS = frozenset({"_meta"})
 
-DEFAULT_LOCK_TIMEOUT_SECONDS: float = 5.0
+DEFAULT_PROXY_LOCK_TIMEOUT_SECONDS: float = 0.2
+DEFAULT_CLI_LOCK_TIMEOUT_SECONDS: float = 5.0
+DEFAULT_LOCK_TIMEOUT_SECONDS: float = DEFAULT_PROXY_LOCK_TIMEOUT_SECONDS
 
 
 class LockTimeout(TimeoutError):

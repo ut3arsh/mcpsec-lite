@@ -186,3 +186,8 @@ Measured via `tests/test_perf.py` on a policy containing **1,000 rules across 10
 5. **[x Applied] Benchmark Runner Skeleton (`benchmark/runner.py`)**:
    - *Decision*: Pure-function `wilson_interval(k, n)` calculating exact score intervals for ASR and FPR. Config matrix YAMLs (`C0.yaml` to `C4.yaml`) with structured `manifest.json`, `trials.csv`, and `summary.csv` outputs.
 
+6. **[x Applied] Lock Timeout Separation & Non-blocking Asyncio Event Loop (Chunk 5.11)**:
+   - *Proxy-path lock timeout*: Restored to 200 ms (`DEFAULT_PROXY_LOCK_TIMEOUT_SECONDS = 0.2`). Contention in interactive sessions is normally resolved in < 5 ms; 200 ms allows 40 retries at 5 ms intervals to absorb transient disk I/O contention. If contention exceeds 200 ms, the proxy fails closed immediately with `LockTimeout` to prevent stalling the agent turn.
+   - *CLI-path lock timeout*: Set to 5.0 s (`DEFAULT_CLI_LOCK_TIMEOUT_SECONDS = 5.0`). Human operators and administrative scripts running `mcpsec-approve` or `mcpsec-pin` can afford to wait several seconds for a concurrent proxy write to finish without disrupting live turns.
+   - *Non-blocking asyncio loop*: All lock-protected file operations in `ProxySession` (`check_tool`, `approve_tool`, `check_pinning`, `request_approval`, `_await_approval` disk sync) are offloaded to worker threads using `anyio.to_thread.run_sync`. An asyncio ticker task running concurrently with contested locks verified maximum delay < 50 ms (measured ~10-15 ms).
+

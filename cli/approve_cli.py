@@ -14,7 +14,7 @@ import json
 import sys
 from pathlib import Path
 
-from mcpsec_core.approvals import ApprovalManager
+from mcpsec_core.approvals import DEFAULT_CLI_LOCK_TIMEOUT_SECONDS, ApprovalManager
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -74,7 +74,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.print_help()
         return 1
 
-    manager = ApprovalManager(log_path=args.log)
+    manager = ApprovalManager(log_path=args.log, lock_timeout=DEFAULT_CLI_LOCK_TIMEOUT_SECONDS)
 
     if args.command == "list":
         approvals = manager.get_all_approvals()

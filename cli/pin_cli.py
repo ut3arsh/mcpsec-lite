@@ -14,7 +14,7 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from mcpsec_core.pinning import PinStore, compute_diff_summary
+from mcpsec_core.pinning import DEFAULT_CLI_LOCK_TIMEOUT_SECONDS, PinStore, compute_diff_summary
 
 
 def format_pin_list(store: PinStore) -> str:
@@ -89,7 +89,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     store_path = Path(args.store)
-    store = PinStore(store_path)
+    store = PinStore(store_path, lock_timeout=DEFAULT_CLI_LOCK_TIMEOUT_SECONDS)
     store.load(fail_closed=False)
 
     if args.command == "list":
