@@ -87,3 +87,11 @@ markers = [
     "slow: tests that take longer to run (e.g. stress or extended property tests)",
 ]
 
+[tool.coverage.run]
+relative_files = true
+branch = true
+source = ["mcpsec_core"]
+
+[tool.coverage.report]
+precision = 2
+
