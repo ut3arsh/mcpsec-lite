@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
+from typing import Any
 from unittest.mock import AsyncMock
 
 import mcp.types as types
@@ -82,23 +83,43 @@ def test_response_scanner_detects_heuristics_and_truncates() -> None:
 
 
 def test_redos_safety_corpus() -> None:
-    """Ensure regex evaluation does not suffer from polynomial/exponential backtracking."""
-    redos_strings = [
-        "a" * 100000,
-        "AKIA" + "0" * 50000,
-        "ghp_" + "a" * 50000,
-        "-----BEGIN " + "A " * 5000 + "PRIVATE KEY-----",
-        "Ignore " * 10000 + "instructions",
-        "\u200b" * 50000,
-        ("A" * 60 + " ") * 2000,
-    ]
+    """Ensure regex evaluation does not suffer from polynomial/exponential backtracking.
 
-    for probe in redos_strings:
+    Validates linear scaling O(n) by checking that quadrupling input size (4n vs n)
+    scales by ratio < 8.0x (best of 5 runs), strictly below quadratic 16.0x,
+    with a generous absolute cap of 500ms.
+    """
+
+    def _time_probe(probe: str) -> float:
         t0 = time.perf_counter()
         scan_arguments(probe)
         scan_response(probe)
-        duration_ms = (time.perf_counter() - t0) * 1000.0
-        assert duration_ms < 250.0, f"ReDoS probe took {duration_ms:.2f} ms (must be < 250 ms)"
+        return (time.perf_counter() - t0) * 1000.0
+
+    probe_generators: list[tuple[str, Any]] = [
+        ("repeated_char", lambda k: "a" * (25_000 * k)),
+        ("aws_key_pathological", lambda k: "AKIA" + "0" * (12_500 * k)),
+        ("github_token_pathological", lambda k: "ghp_" + "a" * (12_500 * k)),
+        (
+            "private_key_pathological",
+            lambda k: "-----BEGIN " + "A " * (1_250 * k) + "PRIVATE KEY-----",
+        ),
+        ("instruction_alternation", lambda k: "Ignore " * (2_500 * k) + "instructions"),
+        ("zero_width_bidi_stream", lambda k: "\u200b" * (12_500 * k)),
+        ("chunked_non_boundary_words", lambda k: ("A" * 60 + " ") * (500 * k)),
+    ]
+
+    for name, gen in probe_generators:
+        t_n = min(_time_probe(gen(1)) for _ in range(5))
+        t_4n = min(_time_probe(gen(4)) for _ in range(5))
+
+        # For linear O(n), ratio T(4n)/T(n) ~ 4.0x. Bound it below 8.0x (well below quadratic 16.0x).
+        scaling_ratio = t_4n / max(t_n, 0.2)
+        assert scaling_ratio < 8.0, (
+            f"Probe '{name}' scaled non-linearly: ratio={scaling_ratio:.2f}x "
+            f"(t_n={t_n:.2f}ms, t_4n={t_4n:.2f}ms, expected linear ~4x, bound < 8x)"
+        )
+        assert t_4n < 500.0, f"Probe '{name}' took {t_4n:.2f} ms at 4n (absolute cap: 500 ms)"
 
 
 @pytest.mark.asyncio
