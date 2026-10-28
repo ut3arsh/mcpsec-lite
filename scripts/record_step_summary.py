@@ -108,9 +108,34 @@ def main(argv: list[str] | None = None) -> int:
     else:
         lines.append("- **Total Skipped:** 0 tests skipped.")
 
+    proxy_cov_path = Path("coverage_proxy.json")
+    if proxy_cov_path.exists():
+        _, _, _, proxy_rows = parse_coverage(proxy_cov_path)
+        session_row = next((r for r in proxy_rows if r["file"].endswith("proxy/session.py")), None)
+        if session_row:
+            cov_stmts = session_row["covered_lines"]
+            tot_stmts = session_row["num_statements"]
+            stmt_pct = (cov_stmts / tot_stmts * 100.0) if tot_stmts else 0.0
+            cov_branches = session_row["covered_branches"]
+            tot_branches = session_row["num_branches"]
+            branch_pct = session_row["percent_branches"]
+            tot_cov = session_row["percent_covered"]
+            lines.extend(
+                [
+                    "",
+                    "### 🛡️ Proxy Session Coverage (`proxy/session.py`)",
+                    f"- **Total Coverage:** **`{tot_cov:.2f}%`**",
+                    f"- **Branch Coverage:** **`{branch_pct:.2f}%`** ({cov_branches}/{tot_branches})",
+                    f"- **Statement Coverage:** **`{stmt_pct:.2f}%`** ({cov_stmts}/{tot_stmts})",
+                ]
+            )
+
     lines.append("")
 
     summary_text = "\n".join(lines) + "\n"
+
+    # Always persist locally to step_summary.md for artifact upload
+    Path("step_summary.md").write_text(summary_text, encoding="utf-8")
 
     summary_env = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary_env:
