@@ -70,7 +70,7 @@ jobs:
 
       - name: Save Core Coverage Data File
         shell: bash
-        run: cp .coverage .coverage.${{ matrix.os }}-py${{ matrix.python-version }}
+        run: cp .coverage core_coverage_${{ matrix.os }}_py${{ matrix.python-version }}.cov
 
       - name: Report Proxy and CLI Coverage (Report Only)
         run: >
@@ -100,7 +100,8 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: raw-coverage-${{ matrix.os }}-py${{ matrix.python-version }}
-          path: .coverage.${{ matrix.os }}-py${{ matrix.python-version }}
+          path: core_coverage_${{ matrix.os }}_py${{ matrix.python-version }}.cov
+          include-hidden-files: true
 
   coverage-gate:
     name: Combined Coverage Gate
@@ -126,7 +127,7 @@ jobs:
 
       - name: Combine Coverage & Generate Report
         run: |
-          coverage combine
+          coverage combine core_coverage_*.cov
           coverage json --include="mcpsec_core/*" -o coverage_core_combined.json
 
       - name: Enforce Combined Coverage Gate (>= 90.00% stmts & branches)
