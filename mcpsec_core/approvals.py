@@ -21,7 +21,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
-DEFAULT_LOCK_TIMEOUT_SECONDS: float = 5.0
+DEFAULT_PROXY_LOCK_TIMEOUT_SECONDS: float = 0.2
+DEFAULT_CLI_LOCK_TIMEOUT_SECONDS: float = 5.0
+DEFAULT_LOCK_TIMEOUT_SECONDS: float = DEFAULT_PROXY_LOCK_TIMEOUT_SECONDS
 
 
 class LockTimeout(TimeoutError):
@@ -176,6 +178,9 @@ class ApprovalManager:
                     except json.JSONDecodeError:
                         continue
                     self._apply_event_to_state(data)
+                    call_id = data.get("call_id")
+                    if call_id and call_id in self._listeners:
+                        self._notify_listener(call_id)
                 self._last_read_offset = f.tell()
 
     def _apply_event_to_state(self, data: dict[str, Any]) -> None:
@@ -234,6 +239,15 @@ class ApprovalManager:
         with self._manager_lock:
             self._sync_from_disk()
             return {k: PendingApproval(**vars(v)) for k, v in self._approvals.items()}
+
+    def get_approval(self, call_id: str) -> PendingApproval | None:
+        """Fetch status for a specific call_id after incremental sync from disk."""
+        with self._manager_lock:
+            self._sync_from_disk()
+            appr = self._approvals.get(call_id)
+            if appr is None:
+                return None
+            return PendingApproval(**vars(appr))
 
     def request_approval(
         self,
@@ -301,6 +315,16 @@ class ApprovalManager:
                 return True  # Already approved, idempotent no-op
             if appr.status in ("denied", "timeout"):
                 return False  # Terminal state reached
+
+            # Check if expires_at has passed (late approval on expired request)
+            if appr.expires_at:
+                try:
+                    exp_dt = datetime.fromisoformat(appr.expires_at)
+                    if datetime.now(UTC) >= exp_dt:
+                        self.record_timeout(call_id)
+                        return False
+                except ValueError:
+                    pass
 
             event = {
                 "event": "approved",

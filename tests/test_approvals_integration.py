@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import subprocess
+import sys
 import threading
 import time
 from pathlib import Path
@@ -290,3 +292,165 @@ async def test_two_sessions_holds_are_isolated(tmp_path: Path) -> None:
     mgr._notify_listener("call-cb")
     assert called is True
     mgr.unregister_listener("call-cb")
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(15.0)
+async def test_cross_process_approval_with_real_cli(tmp_path: Path) -> None:
+    """ProxySession holds a call, real mcpsec-approve CLI approves in separate process, measuring latency."""
+    log_file = tmp_path / "approvals_cli.jsonl"
+    mgr = ApprovalManager(log_file)
+    session = _create_test_session(tmp_path, "session-cli", mgr)
+
+    call_id = "call-cross-proc-1"
+    mgr.request_approval(
+        call_id=call_id,
+        session_id="session-cli",
+        agent_id="dev-agent",
+        server="srv",
+        tool="write_file",
+        args={"path": "test.txt"},
+        capabilities=["write"],
+        taint_state=[],
+        rule_id="req-appr",
+        timeout_seconds=5.0,
+    )
+
+    wake_latency_ms: float = 0.0
+
+    async def _cli_approver() -> None:
+        # Wait until request is on disk
+        await asyncio.sleep(0.05)
+        nonlocal wake_latency_ms
+        cli_proc = await anyio.to_thread.run_sync(
+            lambda: subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "cli.approve_cli",
+                    "approve",
+                    call_id,
+                    "--log",
+                    str(log_file),
+                    "--operator",
+                    "security-admin",
+                    "--reason",
+                    "CLI cross-process approved",
+                ],
+                capture_output=True,
+                text=True,
+            )
+        )
+        cli_finish = time.perf_counter()
+        assert cli_proc.returncode == 0, f"CLI stderr: {cli_proc.stderr}"
+        # Record CLI finish time to compare against session wake
+        _cli_approver.finish_time = cli_finish  # type: ignore[attr-defined]
+
+    _cli_approver.finish_time = time.perf_counter()  # type: ignore[attr-defined]
+
+    async with anyio.create_task_group() as tg:
+        tg.start_soon(_cli_approver)
+        res = await session._await_approval(call_id, timeout_seconds=5.0, poll_interval=0.03)
+        wake_time = time.perf_counter()
+
+    assert res is True
+    wake_latency_ms = (wake_time - _cli_approver.finish_time) * 1000.0  # type: ignore[attr-defined]
+    # Wake latency should be under 150ms with 30ms polling interval
+    assert wake_latency_ms < 150.0, f"Wake latency was {wake_latency_ms:.2f}ms (must be < 150ms)"
+
+    appr = mgr.get_approval(call_id)
+    assert appr is not None
+    assert appr.status == "approved"
+    assert appr.operator == "security-admin"
+    assert appr.reason == "CLI cross-process approved"
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(15.0)
+async def test_proxy_restart_rebuilds_state_and_rejects_late_approval(tmp_path: Path) -> None:
+    """Proxy restart rebuilds approval state; late approval never releases an expired/timed-out call."""
+    log_file = tmp_path / "approvals_restart.jsonl"
+    mgr1 = ApprovalManager(log_file)
+    session1 = _create_test_session(tmp_path, "session-restart", mgr1)
+
+    call_id = "call-timed-out-before-restart"
+    mgr1.request_approval(
+        call_id=call_id,
+        session_id="session-restart",
+        agent_id="dev-agent",
+        server="srv",
+        tool="write_file",
+        args={"path": "test.txt"},
+        capabilities=["write"],
+        taint_state=[],
+        rule_id="req-appr",
+        timeout_seconds=0.2,
+    )
+
+    # Let the call time out in session 1
+    res = await session1._await_approval(call_id, timeout_seconds=0.2, poll_interval=0.03)
+    assert res is False
+    assert mgr1.get_approval(call_id) is not None
+    assert mgr1.get_approval(call_id).status == "timeout"  # type: ignore[union-attr]
+
+    # --- SIMULATE PROXY RESTART ---
+    # New ApprovalManager and new session connected to the existing approvals log
+    mgr2 = ApprovalManager(log_file)
+    _session2 = _create_test_session(tmp_path, "session-restarted", mgr2)
+
+    # 1. State is accurately reconstructed from the file
+    reconstructed = mgr2.get_approval(call_id)
+    assert reconstructed is not None
+    assert reconstructed.status == "timeout"
+
+    # 2. Late approval from real CLI fails closed and does NOT release the timed out call
+    cli_proc = await anyio.to_thread.run_sync(
+        lambda: subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "cli.approve_cli",
+                "approve",
+                call_id,
+                "--log",
+                str(log_file),
+                "--operator",
+                "late-admin",
+            ],
+            capture_output=True,
+            text=True,
+        )
+    )
+    # CLI must fail with non-zero exit code because request already reached terminal state
+    assert cli_proc.returncode != 0
+    assert "terminal state" in cli_proc.stderr
+
+    # In-memory and on-disk state remains timeout
+    appr_after_cli = mgr2.get_approval(call_id)
+    assert appr_after_cli is not None
+    assert appr_after_cli.status == "timeout"
+
+    # 3. Late approval on expired request (expires_at passed while proxy was offline)
+    call_id_expired = "call-expired-during-downtime"
+    mgr2.request_approval(
+        call_id=call_id_expired,
+        session_id="session-restarted",
+        agent_id="dev-agent",
+        server="srv",
+        tool="write_file",
+        args={},
+        capabilities=["write"],
+        taint_state=[],
+        rule_id="req-appr",
+        timeout_seconds=0.05,
+    )
+    # Wait for expires_at to pass
+    await asyncio.sleep(0.1)
+
+    # New proxy manager instance comes online
+    mgr3 = ApprovalManager(log_file)
+    ok = mgr3.approve(call_id_expired, operator="admin", reason="late approve attempt")
+    # Must reject late approval on expired call
+    assert ok is False
+    assert mgr3.get_approval(call_id_expired) is not None
+    assert mgr3.get_approval(call_id_expired).status == "timeout"  # type: ignore[union-attr]
