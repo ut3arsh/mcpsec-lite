@@ -22,7 +22,12 @@ from mcpsec_core.models import (
     SessionState,
     ToolCall,
 )
-from mcpsec_core.pinning import PinStore, check_pinning, clean_tool_definition
+from mcpsec_core.pinning import (
+    DEFAULT_PROXY_LOCK_TIMEOUT_SECONDS,
+    PinStore,
+    check_pinning,
+    clean_tool_definition,
+)
 from mcpsec_core.policy import check_policy
 from mcpsec_core.taint import update_taint
 from proxy.supervisor import UpstreamManager
@@ -93,9 +98,21 @@ class ProxySession:
         self.agent_id = agent_id
         self.mode = mode
         self.policy_data = policy_data
-        self.approval_manager = approval_manager or ApprovalManager()
+        approval_timeout = getattr(
+            getattr(self.policy_data, "approval", None), "lock_timeout", None
+        )
+        proxy_approval_timeout = (
+            float(approval_timeout)
+            if approval_timeout is not None
+            else DEFAULT_PROXY_LOCK_TIMEOUT_SECONDS
+        )
+        if approval_manager is not None:
+            self.approval_manager = approval_manager
+        else:
+            self.approval_manager = ApprovalManager(lock_timeout=proxy_approval_timeout)
 
         # Initialize PinStore
+        pin_timeout = getattr(getattr(self.policy_data, "pinning", None), "lock_timeout", None)
         if pin_store is not None:
             self.pin_store: PinStore | None = pin_store
         elif (
@@ -104,7 +121,12 @@ class ProxySession:
             and self.policy_data.pinning is not None
             and getattr(self.policy_data.pinning, "store", None)
         ):
-            self.pin_store = PinStore(Path(self.policy_data.pinning.store))
+            timeout = (
+                float(pin_timeout)
+                if pin_timeout is not None
+                else DEFAULT_PROXY_LOCK_TIMEOUT_SECONDS
+            )
+            self.pin_store = PinStore(Path(self.policy_data.pinning.store), lock_timeout=timeout)
         else:
             self.pin_store = None
 
@@ -203,10 +225,11 @@ class ProxySession:
 
             tool_dict = extract_model_visible_tool_dict(t, upstream_tool_name)
 
-            status, diff_summary, new_hash = self.pin_store.check_tool(
-                server=server_name,
-                tool_def=tool_dict,
-                mode=pinning_mode,
+            status, diff_summary, new_hash = await anyio.to_thread.run_sync(
+                self.pin_store.check_tool,
+                server_name,
+                tool_dict,
+                pinning_mode,
             )
 
             if pinning_mode == "strict":
@@ -246,7 +269,11 @@ class ProxySession:
                         session_id=self.session_id,
                     )
                     # Trust on first use in audit mode
-                    self.pin_store.approve_tool(server_name, tool_dict)
+                    await anyio.to_thread.run_sync(
+                        self.pin_store.approve_tool,
+                        server_name,
+                        tool_dict,
+                    )
                 elif status == "changed":
                     old_pin = self.pin_store.get_tool_pin(server_name, upstream_tool_name)
                     old_hash = old_pin.tool_hash if old_pin else None
@@ -280,30 +307,45 @@ class ProxySession:
         else:
             return await self._call_tool_internal(name, arguments)
 
-    async def _await_approval(self, call_id: str, timeout_seconds: float) -> bool:
-        """Await operator approval decision until notified or timeout."""
+    async def _await_approval(
+        self,
+        call_id: str,
+        timeout_seconds: float,
+        poll_interval: float = 0.05,
+    ) -> bool:
+        """Await operator approval decision until notified or timeout with thread-offloaded disk sync."""
         event = anyio.Event()
         self.approval_manager.register_listener(call_id, event)
         try:
-            # Check immediately before waiting
-            all_apprs = self.approval_manager.get_all_approvals()
-            if call_id in all_apprs:
-                status = all_apprs[call_id].status
-                if status == "approved":
-                    return True
-                elif status in ("denied", "timeout"):
-                    return False
+            deadline = time.monotonic() + timeout_seconds
+            while True:
+                # 1. Thread-offloaded sync and check from disk
+                appr = await anyio.to_thread.run_sync(self.approval_manager.get_approval, call_id)
+                if appr is not None:
+                    if appr.status == "approved":
+                        return True
+                    if appr.status in ("denied", "timeout"):
+                        return False
 
-            with anyio.move_on_after(timeout_seconds) as cancel_scope:
-                await event.wait()
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
 
-            if cancel_scope.cancel_called:
-                self.approval_manager.record_timeout(call_id)
-                return False
+                # 2. Wait for either event (reactive wake) or poll_interval
+                wait_time = min(poll_interval, remaining)
+                with anyio.move_on_after(wait_time):
+                    await event.wait()
 
-            all_apprs = self.approval_manager.get_all_approvals()
-            if call_id in all_apprs:
-                return all_apprs[call_id].status == "approved"
+                if event.is_set():
+                    # Woken reactively by in-process or thread-sync notification
+                    appr = await anyio.to_thread.run_sync(
+                        self.approval_manager.get_approval, call_id
+                    )
+                    if appr is not None and appr.status in ("approved", "denied", "timeout"):
+                        return appr.status == "approved"
+
+            # Timeout reached
+            await anyio.to_thread.run_sync(self.approval_manager.record_timeout, call_id)
             return False
         finally:
             self.approval_manager.unregister_listener(call_id)
@@ -428,12 +470,13 @@ class ProxySession:
 
         try:
             # 3.1 Pure pinning lifecycle check
-            pin_decision, pin_status, diff_summary, current_hash = check_pinning(
-                server=server_name,
-                tool_name=upstream_tool_name,
-                tool_def=tool_dict,
-                pin_store=self.pin_store,
-                mode=pinning_mode,
+            pin_decision, pin_status, diff_summary, current_hash = await anyio.to_thread.run_sync(
+                check_pinning,
+                server_name,
+                upstream_tool_name,
+                tool_dict,
+                self.pin_store,
+                pinning_mode,
             )
 
             if not pin_decision.is_allowed:
@@ -477,27 +520,34 @@ class ProxySession:
         # If require_approval in enforce mode: register request and await operator elevation
         if effective_decision == "held":
             timeout_sec = 120.0
+            poll_interval_sec = 0.05
             if (
                 self.policy_data
                 and hasattr(self.policy_data, "approval")
                 and self.policy_data.approval
             ):
                 timeout_sec = getattr(self.policy_data.approval, "timeout_seconds", 120.0) or 120.0
+                poll_interval_sec = (
+                    getattr(self.policy_data.approval, "poll_interval_seconds", 0.05) or 0.05
+                )
 
-            self.approval_manager.request_approval(
-                call_id=call_id,
-                session_id=self.session_id,
-                agent_id=self.agent_id,
-                server=server_name,
-                tool=upstream_tool_name,
-                args=raw_args,
-                capabilities=capabilities,
-                taint_state=taint_before,
-                rule_id=rule_id or "require-approval",
-                timeout_seconds=timeout_sec,
+            await anyio.to_thread.run_sync(
+                self.approval_manager.request_approval,
+                call_id,
+                self.session_id,
+                self.agent_id,
+                server_name,
+                upstream_tool_name,
+                raw_args,
+                capabilities,
+                taint_before,
+                rule_id or "require-approval",
+                timeout_sec,
             )
 
-            is_approved = await self._await_approval(call_id, timeout_sec)
+            is_approved = await self._await_approval(
+                call_id, timeout_sec, poll_interval=poll_interval_sec
+            )
             if is_approved:
                 effective_decision = "forwarded"
             else:
