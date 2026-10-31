@@ -52,3 +52,33 @@ def test_byte_for_byte_reproducibility() -> None:
     actual_bytes = run1.encode("utf-8")
 
     assert actual_bytes == expected_bytes, "Regenerating analysis report failed byte-for-byte check"
+
+
+def test_chunk_5_14_byte_for_byte_reproducibility() -> None:
+    trials_path = Path("benchmark/results/dev_20261101/trials.csv")
+    manifest_path = Path("benchmark/attacks/dev/manifest.json")
+    benign_manifest_path = Path("benchmark/benign/manifest.json")
+    report_path = Path("benchmark/results/dev_analysis_20261101.md")
+
+    if not trials_path.exists() or not report_path.exists() or not benign_manifest_path.exists():
+        pytest.skip("Benchmark result files not present")
+
+    trials = load_trials(trials_path)
+    manifest = load_manifest(manifest_path)
+    benign_manifest = load_manifest(benign_manifest_path)
+
+    # First regeneration
+    run1 = generate_report(trials, manifest, date_str="2026-11-01", benign_manifest=benign_manifest)
+    # Second regeneration
+    run2 = generate_report(trials, manifest, date_str="2026-11-01", benign_manifest=benign_manifest)
+
+    # Pure function determinism
+    assert run1 == run2
+
+    # Byte-for-byte identity against committed file (handling git checkout autocrlf)
+    expected_bytes = report_path.read_bytes().replace(b"\r\n", b"\n")
+    actual_bytes = run1.encode("utf-8")
+
+    assert actual_bytes == expected_bytes, (
+        "Regenerating Chunk 5.14 analysis report failed byte-for-byte check"
+    )

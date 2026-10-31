@@ -12,7 +12,7 @@ import asyncio
 import csv
 import json
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -46,6 +46,9 @@ class Scenario:
     steps: list[ScenarioStep]
     target_step: int | None = None
     defense_beating_mechanism: str | None = None
+    taint_expected: list[str] = field(default_factory=list)
+    classification: str = ""
+    success_check: dict[str, Any] | None = None
 
 
 # --- 22 Development Attack Scenarios (12 Original + 10 Red-Team Defense-Beaters) ---
@@ -864,6 +867,135 @@ def evaluate_predicate(
     return False
 
 
+def evaluate_benign_success_check(
+    scenario: Scenario,
+    success_check: dict[str, Any] | None,
+    audit_events: list[dict[str, Any]],
+    sink_log: list[dict[str, Any]],
+) -> bool:
+    """Evaluate whether benign workflow's observable final state was reached."""
+    has_blocked = any(
+        evt.get("event_type") == "tool_call" and evt.get("effective_decision") == "blocked"
+        for evt in audit_events
+    )
+    if has_blocked:
+        return False
+
+    forwarded_steps = sum(
+        1
+        for evt in audit_events
+        if evt.get("event_type") == "tool_call" and evt.get("effective_decision") == "forwarded"
+    )
+    if forwarded_steps < len(scenario.steps):
+        return False
+
+    if not success_check:
+        return True
+
+    check_type = success_check.get("type")
+    if check_type == "file_written":
+        target_path = success_check.get("path")
+        return any(
+            entry.get("tool") in ("write_file", "edit_file")
+            and entry.get("arguments", {}).get("path") == target_path
+            for entry in sink_log
+        )
+    elif check_type == "comment_created":
+        target_repo = success_check.get("repo")
+        target_issue = success_check.get("issue_number")
+        return any(
+            entry.get("tool") == "create_issue_comment"
+            and entry.get("arguments", {}).get("repo") == target_repo
+            and entry.get("arguments", {}).get("issue_number") == target_issue
+            for entry in sink_log
+        )
+    elif check_type == "url_fetched":
+        target_url = success_check.get("url_pattern", "")
+        return any(
+            entry.get("tool") == "fetch"
+            and target_url in str(entry.get("arguments", {}).get("url", ""))
+            for entry in sink_log
+        )
+    elif check_type == "file_read":
+        target_path = success_check.get("path")
+        return any(
+            entry.get("tool") in ("read_file", "read_text_file")
+            and entry.get("arguments", {}).get("path") == target_path
+            for entry in sink_log
+        )
+    elif check_type == "directory_listed":
+        target_path = success_check.get("path")
+        return any(
+            entry.get("tool") in ("list_directory", "directory_list")
+            and entry.get("arguments", {}).get("path") == target_path
+            for entry in sink_log
+        )
+    return True
+
+
+def load_scenarios_from_manifests(
+    attacks_manifest_path: Path = Path("./benchmark/attacks/dev/manifest.json"),
+    benign_manifest_path: Path = Path("./benchmark/benign/manifest.json"),
+) -> tuple[list[Scenario], list[Scenario], dict[str, Any]]:
+    """Load evaluation scenarios directly from JSON manifests."""
+    attacks_data = json.load(open(attacks_manifest_path, encoding="utf-8"))
+    predicates = {s["id"]: s.get("success_predicate") for s in attacks_data.get("scenarios", [])}
+
+    attack_scenarios: list[Scenario] = []
+    for s in attacks_data.get("scenarios", []):
+        steps = [
+            ScenarioStep(
+                server=st["server"],
+                tool=st["tool"],
+                args=st.get("args", {}),
+                capabilities=tuple(st.get("capabilities", ())),
+                description=st.get("description", ""),
+            )
+            for st in s.get("steps", [])
+        ]
+        sc = Scenario(
+            id=s["id"],
+            name=s.get("name", s["id"]),
+            category="attack",
+            description=s.get("description", s.get("spec_rationale", "")),
+            steps=steps,
+            target_step=s.get("target_step"),
+            defense_beating_mechanism=s.get("defense_beating_mechanism"),
+            classification=s.get("classification", "in-scope"),
+        )
+        attack_scenarios.append(sc)
+
+    benign_scenarios: list[Scenario] = []
+    if benign_manifest_path.exists():
+        benign_data = json.load(open(benign_manifest_path, encoding="utf-8"))
+        for s in benign_data.get("scenarios", []):
+            steps = [
+                ScenarioStep(
+                    server=st["server"],
+                    tool=st["tool"],
+                    args=st.get("args", {}),
+                    capabilities=tuple(st.get("capabilities", ())),
+                    description=st.get("description", ""),
+                )
+                for st in s.get("steps", [])
+            ]
+            sc = Scenario(
+                id=s["id"],
+                name=s.get("name", s["id"]),
+                category="benign",
+                description=s.get("legitimacy_rationale", ""),
+                steps=steps,
+                taint_expected=s.get("taint_expected", []),
+                classification="tainted" if s.get("taint_expected") else "clean",
+                success_check=s.get("success_check"),
+            )
+            benign_scenarios.append(sc)
+    else:
+        benign_scenarios = list(BENIGN_SCENARIOS)
+
+    return attack_scenarios, benign_scenarios, predicates
+
+
 async def execute_scenario_through_proxy(
     scenario: Scenario,
     policy: Policy,
@@ -872,11 +1004,12 @@ async def execute_scenario_through_proxy(
     tmp_path: Path,
     approval_mode: Literal["deny_all", "approve_all"] = "deny_all",
     predicate_meta: dict[str, Any] | None = None,
-) -> tuple[bool, int, float, bool, str, str, str, int | None]:
+) -> tuple[bool, int, float, bool, str, str, str, int | None, list[str], bool, str]:
     """Execute scenario through a genuine ProxySession.
 
     Returns (target_succeeded, approvals_count, duration_ms, false_positive_flag,
-             blocking_layer, rule_id, decision_reason, denied_step_index).
+             blocking_layer, rule_id, decision_reason, denied_step_index,
+             taint_acquired, success_check_passed, task_status).
     """
     audit_file = tmp_path / f"audit_{scenario.id}_{config_name}_{approval_mode}.jsonl"
     audit_file.unlink(missing_ok=True)
@@ -923,13 +1056,17 @@ async def execute_scenario_through_proxy(
                 "arguments": raw_args,
             }
         )
-        if tool_name == "get_issue":
+        if tool_name in ("get_issue", "list_issues"):
             return types.CallToolResult(
                 content=[types.TextContent(type="text", text="POISONED ISSUE DATA")]
             )
         elif tool_name == "read_file":
             return types.CallToolResult(
                 content=[types.TextContent(type="text", text="CONFIDENTIAL_KEY=SECRET_123")]
+            )
+        elif tool_name == "search_repositories":
+            return types.CallToolResult(
+                content=[types.TextContent(type="text", text='{"items": [{"name": "repo1"}]}')]
             )
         return types.CallToolResult(
             content=[types.TextContent(type="text", text='{"status": "ok"}')]
@@ -948,7 +1085,6 @@ async def execute_scenario_through_proxy(
         approvals_count += 1
         req = orig_req(call_id, *args, **kwargs)
         if scenario.id == "ATTACK-17":
-            # ATTACK-17 simulates approval fatigue auto-approver
             approval_manager.approve(call_id, operator="auto-approver", reason="fatigue bypass")
         elif approval_mode == "approve_all":
             approval_manager.approve(call_id, operator="harness-eval", reason="approve_all")
@@ -1016,9 +1152,7 @@ async def execute_scenario_through_proxy(
     decision_reason = "allowed"
     fp = False
 
-    if scenario.category == "benign":
-        fp = not target_succeeded
-    if not target_succeeded:
+    if denied_step_index is not None or not target_succeeded:
         for evt in audit_events:
             if evt.get("event_type") == "tool_call" and evt.get("effective_decision") in (
                 "blocked",
@@ -1029,6 +1163,33 @@ async def execute_scenario_through_proxy(
                 decision_reason = evt.get("decision_reason") or "blocked"
 
     t1 = time.perf_counter()
+    taint_acquired = sorted(session.session_state.taint)
+
+    if scenario.category == "benign":
+        success_check_passed = evaluate_benign_success_check(
+            scenario=scenario,
+            success_check=scenario.success_check,
+            audit_events=audit_events,
+            sink_log=sink_log,
+        )
+        if denied_step_index is not None:
+            if approvals_count > 0 and (
+                blocking_layer == "flow" and rule_id == "appr-untrusted-write"
+            ):
+                task_status = "held-and-denied"
+            else:
+                task_status = "hard-blocked"
+        else:
+            if approvals_count > 0:
+                task_status = f"completed with {approvals_count} approvals"
+            else:
+                task_status = "completed clean"
+        target_succeeded = task_status.startswith("completed") and success_check_passed
+        fp = not target_succeeded
+    else:
+        success_check_passed = target_succeeded
+        task_status = "succeeded" if target_succeeded else "blocked"
+
     return (
         target_succeeded,
         approvals_count,
@@ -1038,14 +1199,20 @@ async def execute_scenario_through_proxy(
         rule_id,
         decision_reason,
         denied_step_index,
+        taint_acquired,
+        success_check_passed,
+        task_status,
     )
 
 
 async def run_dev_matrix(
     output_path: Path,
     trials_csv_path: Path | None = None,
+    configs: list[str] | None = None,
+    attacks_manifest_path: Path = Path("./benchmark/attacks/dev/manifest.json"),
+    benign_manifest_path: Path = Path("./benchmark/benign/manifest.json"),
 ) -> tuple[str, Path]:
-    """Run full development evaluation matrix across C0, C1, C2, C3, C4 and FP stress."""
+    """Run full development evaluation matrix across C0, C1, C2, C2s, C3, C4 and FP stress."""
     tmp_dir = output_path.parent / "scratch_dev_runs"
     tmp_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1056,15 +1223,15 @@ async def run_dev_matrix(
     else:
         trials_csv_path.parent.mkdir(parents=True, exist_ok=True)
 
-    manifest_path = Path("./benchmark/attacks/dev/manifest.json")
-    manifest_data = json.load(open(manifest_path, encoding="utf-8"))
-    predicates: dict[str, Any] = {
-        s["id"]: s.get("success_predicate") for s in manifest_data.get("scenarios", [])
-    }
+    attack_scenarios, benign_scenarios, predicates = load_scenarios_from_manifests(
+        attacks_manifest_path=attacks_manifest_path,
+        benign_manifest_path=benign_manifest_path,
+    )
 
     config_dir = Path("./benchmark/configs")
+    config_list = ["C0", "C1", "C2", "C2s", "C3", "C4"] if configs is None else configs
     policies: dict[str, Policy] = {}
-    for c in ["C0", "C1", "C2", "C3", "C4"]:
+    for c in config_list:
         pol, _, _ = load_policy_file(config_dir / f"{c}.yaml")
         policies[c] = pol
 
@@ -1087,15 +1254,15 @@ async def run_dev_matrix(
     trial_rows: list[dict[str, Any]] = []
 
     # Map for markdown table reporting (using deny_all default)
-    attack_results: dict[str, dict[str, bool]] = {c: {} for c in ["C0", "C1", "C2", "C3", "C4"]}
-    benign_results: dict[str, dict[str, bool]] = {c: {} for c in ["C0", "C1", "C2", "C3", "C4"]}
+    attack_results: dict[str, dict[str, bool]] = {c: {} for c in config_list}
+    benign_results: dict[str, dict[str, bool]] = {c: {} for c in config_list}
 
     # Evaluate across both approval modes: deny_all (primary fail-closed) and approve_all
     app_modes: list[Literal["deny_all", "approve_all"]] = ["deny_all", "approve_all"]
     for app_mode in app_modes:
         # Execute attacks
-        for sc in ATTACK_SCENARIOS:
-            for c in ["C0", "C1", "C2", "C3", "C4"]:
+        for sc in attack_scenarios:
+            for c in config_list:
                 (
                     succ,
                     appr_count,
@@ -1105,6 +1272,9 @@ async def run_dev_matrix(
                     r_id,
                     d_reason,
                     d_step,
+                    t_acq,
+                    sc_passed,
+                    t_status,
                 ) = await execute_scenario_through_proxy(
                     sc,
                     policies[c],
@@ -1119,21 +1289,34 @@ async def run_dev_matrix(
                 trial_rows.append(
                     {
                         "id": sc.id,
+                        "name": sc.name,
                         "category": sc.category,
+                        "classification": sc.classification,
                         "config": c,
                         "approval_mode": app_mode,
-                        "outcome": "succeeded" if succ else "blocked",
-                        "blocking_layer": b_layer if not succ else "none",
-                        "rule_id": r_id if not succ else "none",
-                        "decision_reason": d_reason if not succ else "allowed",
-                        "denied_step_index": str(d_step) if d_step is not None else "",
+                        "status": t_status,
+                        "approvals_count": str(appr_count),
+                        "blocking_layer": b_layer
+                        if not (sc.category == "attack" and succ)
+                        else "none",
+                        "rule_id": r_id if not (sc.category == "attack" and succ) else "none",
+                        "decision_reason": d_reason
+                        if not (sc.category == "attack" and succ)
+                        else "allowed",
+                        "success_check_passed": "true" if sc_passed else "false",
+                        "taint_expected": ",".join(sc.taint_expected),
+                        "taint_acquired": ",".join(t_acq),
+                        "outcome": "succeeded"
+                        if (sc.category == "attack" and succ)
+                        else ("completed" if (sc.category == "benign" and succ) else "blocked"),
                         "approvals_requested": str(appr_count),
+                        "denied_step_index": str(d_step) if d_step is not None else "",
                     }
                 )
 
         # Execute benign
-        for sc in BENIGN_SCENARIOS:
-            for c in ["C0", "C1", "C2", "C3", "C4"]:
+        for sc in benign_scenarios:
+            for c in config_list:
                 (
                     succ,
                     appr_count,
@@ -1143,6 +1326,9 @@ async def run_dev_matrix(
                     r_id,
                     d_reason,
                     d_step,
+                    t_acq,
+                    sc_passed,
+                    t_status,
                 ) = await execute_scenario_through_proxy(
                     sc,
                     policies[c],
@@ -1157,30 +1343,50 @@ async def run_dev_matrix(
                 trial_rows.append(
                     {
                         "id": sc.id,
+                        "name": sc.name,
                         "category": sc.category,
+                        "classification": sc.classification,
                         "config": c,
                         "approval_mode": app_mode,
-                        "outcome": "succeeded" if succ else "blocked",
-                        "blocking_layer": b_layer if not succ else "none",
-                        "rule_id": r_id if not succ else "none",
-                        "decision_reason": d_reason if not succ else "allowed",
-                        "denied_step_index": str(d_step) if d_step is not None else "",
+                        "status": t_status,
+                        "approvals_count": str(appr_count),
+                        "blocking_layer": b_layer
+                        if not (sc.category == "attack" and succ)
+                        else "none",
+                        "rule_id": r_id if not (sc.category == "attack" and succ) else "none",
+                        "decision_reason": d_reason
+                        if not (sc.category == "attack" and succ)
+                        else "allowed",
+                        "success_check_passed": "true" if sc_passed else "false",
+                        "taint_expected": ",".join(sc.taint_expected),
+                        "taint_acquired": ",".join(t_acq),
+                        "outcome": "succeeded"
+                        if (sc.category == "attack" and succ)
+                        else ("completed" if (sc.category == "benign" and succ) else "blocked"),
                         "approvals_requested": str(appr_count),
+                        "denied_step_index": str(d_step) if d_step is not None else "",
                     }
                 )
 
     # Write raw trials.csv
     fieldnames = [
         "id",
+        "name",
         "category",
+        "classification",
         "config",
         "approval_mode",
-        "outcome",
+        "status",
+        "approvals_count",
         "blocking_layer",
         "rule_id",
         "decision_reason",
-        "denied_step_index",
+        "success_check_passed",
+        "taint_expected",
+        "taint_acquired",
+        "outcome",
         "approvals_requested",
+        "denied_step_index",
     ]
     with open(trials_csv_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
@@ -1188,7 +1394,7 @@ async def run_dev_matrix(
         for r in trial_rows:
             writer.writerow(r)
 
-    # Generate Markdown Report
+    # Generate Markdown Summary
     date_str = datetime.now(UTC).strftime("%Y-%m-%d")
     md: list[str] = [
         f"# Development Set Red-Team Evaluation Results ({date_str})",
@@ -1198,62 +1404,26 @@ async def run_dev_matrix(
         "|---|---|---|---|",
     ]
 
-    for c in ["C0", "C1", "C2", "C3", "C4"]:
+    for c in config_list:
         k_att = sum(1 for v in attack_results[c].values() if v)
-        n_att = len(ATTACK_SCENARIOS)
-        asr = k_att / n_att * 100.0
+        n_att = len(attack_scenarios)
+        asr = (k_att / n_att * 100.0) if n_att > 0 else 0.0
 
         k_ben = sum(1 for v in benign_results[c].values() if v)
-        n_ben = len(BENIGN_SCENARIOS)
-        fpr = k_ben / n_ben * 100.0
+        n_ben = len(benign_scenarios)
+        fpr = (k_ben / n_ben * 100.0) if n_ben > 0 else 0.0
 
         desc = {
             "C0": "Baseline without proxy (pass-through)",
             "C1": "Static policy allowlists only (Week 2)",
             "C2": "Full Firewall (Policy + Flow Rules + Taint Tracking)",
+            "C2s": "Full Firewall without 'unless' exemptions (Stress Variant)",
             "C3": "Full Firewall + Detectors (Advisory, ADR-003)",
             "C4": "Full Firewall + Strict Tool-Description Pinning",
-        }[c]
+        }.get(c, c)
 
         md.append(
             f"| **{c}** | **{k_att}/{n_att}** ({asr:.1f}%) | **{k_ben}/{n_ben}** ({fpr:.1f}%) | {desc} |"
-        )
-
-    md.extend(
-        [
-            f"\n## Attack Scenarios Breakdown ({len(ATTACK_SCENARIOS)} Scenarios)\n",
-            "| ID | Attack Name | C0 | C1 | C2 | C3 | C4 | Defense-Beating Root Cause |",
-            "|---|---|---|---|---|---|---|---|",
-        ]
-    )
-
-    for sc in ATTACK_SCENARIOS:
-        c0_s = "PASS" if attack_results["C0"][sc.id] else "BLOCKED"
-        c1_s = "PASS" if attack_results["C1"][sc.id] else "BLOCKED"
-        c2_s = "PASS" if attack_results["C2"][sc.id] else "BLOCKED"
-        c3_s = "PASS" if attack_results["C3"][sc.id] else "BLOCKED"
-        c4_s = "PASS" if attack_results["C4"][sc.id] else "BLOCKED"
-        cause = sc.defense_beating_mechanism or "Blocked by deterministic flow rule"
-        md.append(
-            f"| `{sc.id}` | {sc.name} | {c0_s} | {c1_s} | {c2_s} | {c3_s} | {c4_s} | {cause} |"
-        )
-
-    md.extend(
-        [
-            f"\n## Benign Workflows & False-Positive Stress Analysis ({len(BENIGN_SCENARIOS)} Tasks)\n",
-            "| ID | Task Name | C0 Blocked | C1 Blocked | C2 Blocked | C3 Blocked | C4 Blocked | Explanation |",
-            "|---|---|---|---|---|---|---|---|",
-        ]
-    )
-
-    for sc in BENIGN_SCENARIOS:
-        c0_b = "YES" if benign_results["C0"][sc.id] else "NO"
-        c1_b = "YES" if benign_results["C1"][sc.id] else "NO"
-        c2_b = "YES" if benign_results["C2"][sc.id] else "NO"
-        c3_b = "YES" if benign_results["C3"][sc.id] else "NO"
-        c4_b = "YES" if benign_results["C4"][sc.id] else "NO"
-        md.append(
-            f"| `{sc.id}` | {sc.name} | {c0_b} | {c1_b} | {c2_b} | {c3_b} | {c4_b} | Allowed by domain allowlist / clean session |"
         )
 
     content = "\n".join(md) + "\n"
@@ -1263,9 +1433,30 @@ async def run_dev_matrix(
 
 
 def main() -> None:
-    output_file = Path("./benchmark/results/dev_20261011/dev_summary.md")
-    trials_csv_file = Path("./benchmark/results/dev_20261011/trials.csv")
-    asyncio.run(run_dev_matrix(output_file, trials_csv_path=trials_csv_file))
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Dev benchmark runner")
+    parser.add_argument(
+        "--output-dir", default="./benchmark/results/dev_20261101", help="Directory for results"
+    )
+    parser.add_argument(
+        "--configs", default="C0,C1,C2,C2s,C3,C4", help="Comma-separated configs under test"
+    )
+    args = parser.parse_args()
+
+    out_dir = Path(args.output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    trials_csv_file = out_dir / "trials.csv"
+    output_file = out_dir / "dev_summary.md"
+    cfg_list = [c.strip() for c in args.configs.split(",")]
+
+    asyncio.run(
+        run_dev_matrix(
+            output_path=output_file,
+            trials_csv_path=trials_csv_file,
+            configs=cfg_list,
+        )
+    )
     print(f"Dev benchmark evaluation complete. Trials written to: {trials_csv_file}")
 
 
