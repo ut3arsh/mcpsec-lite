@@ -63,6 +63,26 @@ def check_coverage_gate(json_path: Path) -> int:
             }
         )
 
+    REQUIRED_CORE_STEMS = frozenset(
+        {"audit", "pinning", "flow", "matching", "policy", "taint", "approvals", "detectors"}
+    )
+    floor_failures: list[str] = []
+    checked_stems: set[str] = set()
+
+    for row in file_rows:
+        stem = Path(row["file"]).stem
+        if stem in REQUIRED_CORE_STEMS:
+            checked_stems.add(stem)
+            if row["stmt_pct"] < 85.00 or row["branch_pct"] < 85.00:
+                floor_failures.append(
+                    f"`{row['file']}`: stmts={row['stmt_pct']:.2f}% (min 85.00%), "
+                    f"branches={row['branch_pct']:.2f}% (min 85.00%)"
+                )
+
+    missing_core = REQUIRED_CORE_STEMS - checked_stems
+    if missing_core:
+        floor_failures.append(f"Missing core modules in coverage report: {sorted(missing_core)}")
+
     # Markdown summary output
     lines: list[str] = [
         "## 🛡️ Combined Cross-Platform Coverage Gate (`mcpsec_core`)",
@@ -70,10 +90,25 @@ def check_coverage_gate(json_path: Path) -> int:
         f"- **Combined Statement Coverage:** **`{stmt_pct:.2f}%`** ({covered_lines}/{num_statements}) — Target: $\\ge 90.00\\%$",
         f"- **Combined Branch Coverage:** **`{branch_pct:.2f}%`** ({covered_branches}/{num_branches}) — Target: $\\ge 90.00\\%$",
         f"- **Combined Total Coverage:** **`{overall_pct:.2f}%`** ({total_covered}/{total_elements})",
-        "",
-        "| Module | Statements | Statement (%) | Branches | Branch (%) |",
-        "|---|---|---|---|---|",
     ]
+
+    if not floor_failures:
+        lines.append(
+            "- **Per-Module Floor (>= 85.00% stmts & branches):** ✅ **PASSED** "
+            "(all 8 core modules: audit, pinning, flow, matching, policy, taint, approvals, detectors)"
+        )
+    else:
+        lines.append(
+            f"- **Per-Module Floor (>= 85.00% stmts & branches):** ❌ **FAILED** — {'; '.join(floor_failures)}"
+        )
+
+    lines.extend(
+        [
+            "",
+            "| Module | Statements | Statement (%) | Branches | Branch (%) |",
+            "|---|---|---|---|---|",
+        ]
+    )
 
     for row in file_rows:
         lines.append(
@@ -84,16 +119,24 @@ def check_coverage_gate(json_path: Path) -> int:
 
     lines.append("")
 
-    gate_passed = (stmt_pct >= 90.00) and (branch_pct >= 90.00)
+    overall_gate_passed = (stmt_pct >= 90.00) and (branch_pct >= 90.00)
+    floor_gate_passed = len(floor_failures) == 0
+    gate_passed = overall_gate_passed and floor_gate_passed
+
     if gate_passed:
         lines.append(
-            "✅ **GATE STATUS: PASSED** — Both statement and branch coverage meet or exceed 90.00%."
+            "✅ **GATE STATUS: PASSED** — Both statement and branch coverage meet or exceed 90.00%, "
+            "and all 8 core modules meet or exceed the 85.00% floor."
         )
     else:
-        lines.append(
-            f"❌ **GATE STATUS: FAILED** — Gate requires statement >= 90.00% and branch >= 90.00%. "
-            f"Observed: statement={stmt_pct:.2f}%, branch={branch_pct:.2f}%."
-        )
+        failure_reasons: list[str] = []
+        if not overall_gate_passed:
+            failure_reasons.append(
+                f"overall stmts={stmt_pct:.2f}% or branches={branch_pct:.2f}% below 90.00%"
+            )
+        if not floor_gate_passed:
+            failure_reasons.append(f"module floor failed: {'; '.join(floor_failures)}")
+        lines.append(f"❌ **GATE STATUS: FAILED** — Gate violation: {'; '.join(failure_reasons)}.")
 
     summary_text = "\n".join(lines) + "\n"
     print(summary_text)
@@ -109,8 +152,9 @@ def check_coverage_gate(json_path: Path) -> int:
 
     if not gate_passed:
         sys.stderr.write(
-            f"CoverageGateError: Combined coverage failed gate! "
-            f"Statements: {stmt_pct:.2f}% (min 90.00%), Branches: {branch_pct:.2f}% (min 90.00%)\n"
+            f"CoverageGateError: Coverage failed gate! "
+            f"Statements: {stmt_pct:.2f}% (min 90.00%), Branches: {branch_pct:.2f}% (min 90.00%), "
+            f"Floor failures: {floor_failures}\n"
         )
         return 1
 
