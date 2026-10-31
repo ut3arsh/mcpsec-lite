@@ -113,6 +113,16 @@ def test_arbitrary_new_field_changes_hash_and_volatile_field_ignored(tmp_path: P
     meta_hash = compute_tool_hash(def_with_meta)
     assert meta_hash == base_hash, "_meta volatile field MUST NOT alter tool hash"
 
+    # 2b. Standard annotations field is model-visible and MUST alter tool hash (never ignored)
+    def_with_annotations = {
+        "name": "query",
+        "description": "query db",
+        "inputSchema": {},
+        "annotations": {"readOnly": True, "priority": 0.8},
+    }
+    ann_hash = compute_tool_hash(def_with_annotations)
+    assert ann_hash != base_hash, "annotations field MUST alter tool hash (not volatile)"
+
     # 3. PinStore records hashed_fields in pins.json
     store_file = tmp_path / "pins.json"
     store = PinStore(store_file)
