@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from mcpsec_core.audit import AuditLogger, canonical_json_hash, format_rfc3339_utc
 from mcpsec_core.models import (
     ApprovalEvent,
@@ -367,3 +369,148 @@ def test_audit_log_schema_enums_bidirectional_contract() -> None:
     assert code_event_types == doc_event_types, (
         f"event_type mismatch: code={code_event_types}, doc={doc_event_types}"
     )
+
+
+def test_audit_behavior_and_edge_branches(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify behavior of tz-aware formatting, size-probe errors, Redactor modes, and verify_hash_chain."""
+    from datetime import datetime, timedelta, timezone
+    from typing import Any
+
+    from mcpsec_core.audit import Redactor, verify_hash_chain
+
+    # 1. format_rfc3339_utc with tz-aware datetime
+    tz_ist = timezone(timedelta(hours=5, minutes=30))
+    dt_ist = datetime(2026, 10, 31, 15, 30, 45, 123456, tzinfo=tz_ist)
+    ts = format_rfc3339_utc(dt_ist)
+    assert ts == "2026-10-31T10:00:45.123Z"
+
+    # 2. Redactor modes: full and hash_only
+    redactor_full = Redactor(mode="full")
+    assert redactor_full.redact_text("token AKIA1234567890123456") == "token AKIA1234567890123456"
+    assert redactor_full.redact_args({"token": "secret123"}) == {"token": "secret123"}
+
+    redactor_hash = Redactor(mode="hash_only")
+    assert redactor_hash.redact_args({"key": "val"}) == {
+        "sha256": canonical_json_hash({"key": "val"})
+    }
+
+    redactor_redacted = Redactor(mode="redacted")
+    nested = [{"PASSWORD": "secret", "count": 42, "ratio": 3.14, "active": True}]
+    redacted_val = redactor_redacted.redact_args(nested)
+    assert redacted_val == [{"PASSWORD": "[REDACTED]", "count": 42, "ratio": 3.14, "active": True}]
+
+    # 3. Size probe error handling in _maybe_rotate_unlocked
+    log_file = tmp_path / "probe_err.jsonl"
+    logger = AuditLogger(log_path=log_file, max_bytes=1000)
+    logger.log_policy_loaded("p.yaml", "hash1")
+
+    orig_stat = Path.stat
+
+    def failing_stat(self: Path, *args: Any, **kwargs: Any) -> Any:
+        if self == log_file:
+            raise OSError("Size probe I/O error")
+        return orig_stat(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "stat", failing_stat)
+    ev = logger.log_policy_loaded("p2.yaml", "hash2")
+    assert ev.seq == 2
+    monkeypatch.undo()
+
+    # 4. In-memory logger without log_path
+    mem_logger = AuditLogger(log_path=None)
+    ev_mem1 = mem_logger.log_policy_loaded("p.yaml", "hash1")
+    ev_mem2 = mem_logger.log_session_start("s1", "a1", "hash1")
+    assert ev_mem1.seq == 1
+    assert ev_mem2.seq == 2
+
+    # 5. verify_hash_chain with non-existent file, empty lines, and chain resumed with prev_hash
+    ok_missing, err_missing = verify_hash_chain([tmp_path / "non_existent.jsonl"])
+    assert not ok_missing
+    assert "does not exist" in (err_missing or "")
+
+    file_with_blank = tmp_path / "blank_lines.jsonl"
+    logger_blank = AuditLogger(log_path=file_with_blank, tamper_evident=True)
+    logger_blank.log_policy_loaded("p.yaml", "h1")
+    logger_blank.log_session_start("s1", "a1", "h1")
+    with open(file_with_blank, "a", encoding="utf-8") as f:
+        f.write("\n\n")
+    ok_blank, err_blank = verify_hash_chain([file_with_blank])
+    assert ok_blank
+    assert err_blank is None
+
+    first_with_prev = tmp_path / "resumed.jsonl"
+    with open(first_with_prev, "w", encoding="utf-8") as f:
+        f.write(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "event_type": "policy_loaded",
+                    "seq": 1,
+                    "prev_hash": "abc123",
+                }
+            )
+            + "\n"
+        )
+    ok_resumed, err_resumed = verify_hash_chain([first_with_prev])
+    assert ok_resumed
+    assert err_resumed is None
+
+    # 6. _recover_seq_and_hash with corrupt last line or unreadable file
+    corrupt_log = tmp_path / "corrupt_last.jsonl"
+    corrupt_log.write_text("not a json\n", encoding="utf-8")
+    recovered_logger = AuditLogger(log_path=corrupt_log, tamper_evident=True)
+    recovered_logger._recover_seq_and_hash()
+    assert recovered_logger._seq == 0
+
+    unreadable_log = tmp_path / "unreadable.jsonl"
+    recovered_logger2 = AuditLogger(log_path=unreadable_log, tamper_evident=True)
+
+    def failing_open(*args: Any, **kwargs: Any) -> Any:
+        raise OSError("Permission denied")
+
+    monkeypatch.setattr("builtins.open", failing_open)
+    recovered_logger2._recover_seq_and_hash()
+    assert recovered_logger2._seq == 0
+    monkeypatch.undo()
+
+    # 7. Custom timestamp on log_pin_event and log_approval, plus dict latency/response_summary
+    test_log = tmp_path / "custom_ts.jsonl"
+    custom_logger = AuditLogger(log_path=test_log)
+    p_ev = custom_logger.log_pin_event(
+        server="srv",
+        action="first_seen",
+        mode="audit",
+        effective_decision="logged",
+        timestamp="2026-10-31T12:00:00.000Z",
+    )
+    assert p_ev.timestamp == "2026-10-31T12:00:00.000Z"
+
+    appr_ev = custom_logger.log_approval(
+        session_id="s1",
+        action="approved",
+        approver="admin",
+        taint_before=["untrusted_content"],
+        taint_after=[],
+        timestamp="2026-10-31T12:05:00.000Z",
+    )
+    assert appr_ev.timestamp == "2026-10-31T12:05:00.000Z"
+
+    # 8. log_tool_call with dict latency_ms and dict response_summary
+    tc_ev = custom_logger.log_tool_call(
+        session_id="s1",
+        call_id="c1",
+        agent_id="a1",
+        server="srv",
+        tool="t1",
+        capabilities=["read"],
+        raw_args={"path": "test"},
+        decision="allow",
+        effective_decision="forwarded",
+        decision_layer="none",
+        decision_reason="ok",
+        latency_ms={"proxy": 1.5, "upstream": 20.0},
+        response_summary={"status": "ok", "bytes": 128},
+    )
+    assert tc_ev.latency_ms.proxy == 1.5
+    assert tc_ev.response_summary is not None
+    assert tc_ev.response_summary.bytes == 128

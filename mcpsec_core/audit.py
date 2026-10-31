@@ -249,10 +249,10 @@ class AuditLogger:
         if not self.log_path or self.max_bytes is None:
             return
 
-        if not self.log_path.exists():
+        try:
+            current_size = self.log_path.stat().st_size
+        except OSError:
             return
-
-        current_size = self.log_path.stat().st_size
         if current_size > 0 and (current_size + new_bytes_len) > self.max_bytes:
             timestamp_str = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
             stem = self.log_path.stem
