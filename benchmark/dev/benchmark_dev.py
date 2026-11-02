@@ -935,7 +935,7 @@ def evaluate_benign_success_check(
 
 def load_scenarios_from_manifests(
     attacks_manifest_path: Path = Path("./benchmark/attacks/dev/manifest.json"),
-    benign_manifest_path: Path = Path("./benchmark/benign/manifest.json"),
+    benign_manifest_path: Path | list[Path] | None = None,
 ) -> tuple[list[Scenario], list[Scenario], dict[str, Any]]:
     """Load evaluation scenarios directly from JSON manifests."""
     attacks_data = json.load(open(attacks_manifest_path, encoding="utf-8"))
@@ -966,31 +966,43 @@ def load_scenarios_from_manifests(
         attack_scenarios.append(sc)
 
     benign_scenarios: list[Scenario] = []
-    if benign_manifest_path.exists():
-        benign_data = json.load(open(benign_manifest_path, encoding="utf-8"))
-        for s in benign_data.get("scenarios", []):
-            steps = [
-                ScenarioStep(
-                    server=st["server"],
-                    tool=st["tool"],
-                    args=st.get("args", {}),
-                    capabilities=tuple(st.get("capabilities", ())),
-                    description=st.get("description", ""),
-                )
-                for st in s.get("steps", [])
-            ]
-            sc = Scenario(
-                id=s["id"],
-                name=s.get("name", s["id"]),
-                category="benign",
-                description=s.get("legitimacy_rationale", ""),
-                steps=steps,
-                taint_expected=s.get("taint_expected", []),
-                classification="tainted" if s.get("taint_expected") else "clean",
-                success_check=s.get("success_check"),
-            )
-            benign_scenarios.append(sc)
+    if benign_manifest_path is None:
+        manifest_paths = [
+            Path("./benchmark/benign/manifest.json"),
+            Path("./benchmark/benign/manifest_v2.json"),
+        ]
+    elif isinstance(benign_manifest_path, (list, tuple)):
+        manifest_paths = list(benign_manifest_path)
     else:
+        manifest_paths = [benign_manifest_path]
+
+    for m_path in manifest_paths:
+        if m_path.exists():
+            benign_data = json.load(open(m_path, encoding="utf-8"))
+            for s in benign_data.get("scenarios", []):
+                steps = [
+                    ScenarioStep(
+                        server=st["server"],
+                        tool=st["tool"],
+                        args=st.get("args", {}),
+                        capabilities=tuple(st.get("capabilities", ())),
+                        description=st.get("description", ""),
+                    )
+                    for st in s.get("steps", [])
+                ]
+                sc = Scenario(
+                    id=s["id"],
+                    name=s.get("name", s["id"]),
+                    category="benign",
+                    description=s.get("legitimacy_rationale", ""),
+                    steps=steps,
+                    taint_expected=s.get("taint_expected", []),
+                    classification="tainted" if s.get("taint_expected") else "clean",
+                    success_check=s.get("success_check"),
+                )
+                benign_scenarios.append(sc)
+
+    if not benign_scenarios:
         benign_scenarios = list(BENIGN_SCENARIOS)
 
     return attack_scenarios, benign_scenarios, predicates
@@ -1210,7 +1222,7 @@ async def run_dev_matrix(
     trials_csv_path: Path | None = None,
     configs: list[str] | None = None,
     attacks_manifest_path: Path = Path("./benchmark/attacks/dev/manifest.json"),
-    benign_manifest_path: Path = Path("./benchmark/benign/manifest.json"),
+    benign_manifest_path: Path | list[Path] | None = None,
 ) -> tuple[str, Path]:
     """Run full development evaluation matrix across C0, C1, C2, C2s, C3, C4 and FP stress."""
     tmp_dir = output_path.parent / "scratch_dev_runs"
@@ -1437,7 +1449,7 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(description="Dev benchmark runner")
     parser.add_argument(
-        "--output-dir", default="./benchmark/results/dev_20261101", help="Directory for results"
+        "--output-dir", default="./benchmark/results/dev_20261102", help="Directory for results"
     )
     parser.add_argument(
         "--configs", default="C0,C1,C2,C2s,C3,C4", help="Comma-separated configs under test"
