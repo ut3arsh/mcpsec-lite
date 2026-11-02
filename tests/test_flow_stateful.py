@@ -8,6 +8,8 @@ Asserts the fundamental security invariant:
 
 from __future__ import annotations
 
+import os
+
 from hypothesis import settings
 from hypothesis import strategies as st
 from hypothesis.stateful import RuleBasedStateMachine, initialize, invariant, rule
@@ -229,5 +231,7 @@ class SessionSecurityStateMachine(RuleBasedStateMachine):
             assert dec_evil.is_allowed
 
 
+profile = os.environ.get("HYPOTHESIS_PROFILE", "dev")
+max_examples = 500 if profile == "ci" else 50
 TestSessionStateMachine = SessionSecurityStateMachine.TestCase
-TestSessionStateMachine.settings = settings(max_examples=100, stateful_step_count=30)
+TestSessionStateMachine.settings = settings(max_examples=max_examples, stateful_step_count=30)

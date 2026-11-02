@@ -9,11 +9,12 @@ from __future__ import annotations
 
 import statistics
 import time
-from pathlib import Path
+
+import pytest
 
 from mcpsec_core.adapters import ToolAdapter, register_adapter
 from mcpsec_core.models import ToolCall
-from mcpsec_core.policy import check_policy, load_policy
+from mcpsec_core.policy import Policy, check_policy, load_policy
 
 
 def generate_large_policy_yaml(
@@ -79,13 +80,22 @@ def generate_large_policy_yaml(
     return "\n".join(lines)
 
 
-def test_check_policy_pure_matching_performance_budget(tmp_path: Path) -> None:
-    """Pure in-memory policy lookup and domain allowlist matching budget (< 1.0 ms p95)."""
-    base = (tmp_path / "workspace").resolve()
+@pytest.fixture(scope="module")
+def large_perf_policy(tmp_path_factory: pytest.TempPathFactory) -> tuple[Policy, str]:
+    """Parse the 1,000-rule policy once per module to avoid redundant YAML deserialization."""
+    base = tmp_path_factory.mktemp("workspace").resolve()
+    base.mkdir(parents=True, exist_ok=True)
     base_posix = base.as_posix()
-
     yaml_str = generate_large_policy_yaml(base_posix, num_agents=100, rules_per_agent=10)
     policy, _, _ = load_policy(yaml_str)
+    return policy, base_posix
+
+
+def test_check_policy_pure_matching_performance_budget(
+    large_perf_policy: tuple[Policy, str],
+) -> None:
+    """Pure in-memory policy lookup and domain allowlist matching budget (< 1.0 ms p95)."""
+    policy, base_posix = large_perf_policy
 
     # Warmup
     warmup_call = ToolCall(
@@ -137,14 +147,11 @@ def test_check_policy_pure_matching_performance_budget(tmp_path: Path) -> None:
     )
 
 
-def test_check_policy_filesystem_resolution_performance(tmp_path: Path) -> None:
+def test_check_policy_filesystem_resolution_performance(
+    large_perf_policy: tuple[Policy, str],
+) -> None:
     """End-to-end policy check with real-path filesystem canonicalization (< 10.0 ms target)."""
-    base = (tmp_path / "workspace").resolve()
-    base.mkdir(parents=True, exist_ok=True)
-    base_posix = base.as_posix()
-
-    yaml_str = generate_large_policy_yaml(base_posix, num_agents=100, rules_per_agent=10)
-    policy, _, _ = load_policy(yaml_str)
+    policy, base_posix = large_perf_policy
 
     # Warmup
     warmup_call = ToolCall(
@@ -196,17 +203,15 @@ def test_check_policy_filesystem_resolution_performance(tmp_path: Path) -> None:
     )
 
 
-def test_flow_and_taint_performance_budget(tmp_path: Path) -> None:
+def test_flow_and_taint_performance_budget(
+    large_perf_policy: tuple[Policy, str],
+) -> None:
     """Pure computational performance budget for check_flow + update_taint (< 0.2 ms p95 on 1,000-rule policy)."""
     from mcpsec_core.flow import check_flow
     from mcpsec_core.models import ResponseSummary, SessionState
     from mcpsec_core.taint import update_taint
 
-    base = (tmp_path / "workspace").resolve()
-    base_posix = base.as_posix()
-
-    yaml_str = generate_large_policy_yaml(base_posix, num_agents=100, rules_per_agent=10)
-    policy, _, _ = load_policy(yaml_str)
+    policy, _ = large_perf_policy
 
     state = SessionState(session_id="bench-sess", taint={"untrusted_content"})
     outcome = ResponseSummary(status="ok", bytes=512)

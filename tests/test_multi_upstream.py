@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -33,19 +34,19 @@ async def test_multi_upstream_aggregation_and_routing(tmp_path: Path) -> None:
     configs = [
         UpstreamConfig(
             name="fs",
-            command="python",
+            command=sys.executable,
             args=["-m", "tests.test_server", "--dir", str(sandbox_dir)],
             required=True,
         ),
         UpstreamConfig(
             name="fetch",
-            command="python",
+            command=sys.executable,
             args=["-m", "tests.fakes.fake_fetch"],
             required=False,
         ),
         UpstreamConfig(
             name="github",
-            command="python",
+            command=sys.executable,
             args=["-m", "tests.fakes.fake_github"],
             env={"GITHUB_READ_ONLY": "true"},
             required=False,
@@ -180,13 +181,13 @@ async def test_non_required_upstream_degradation(tmp_path: Path) -> None:
     configs = [
         UpstreamConfig(
             name="fs",
-            command="python",
+            command=sys.executable,
             args=["-m", "tests.test_server", "--dir", str(tmp_path)],
             required=True,
         ),
         UpstreamConfig(
             name="nonexistent",
-            command="python",
+            command=sys.executable,
             args=["-m", "nonexistent_module_that_fails_immediately"],
             required=False,
         ),

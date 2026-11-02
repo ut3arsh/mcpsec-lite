@@ -77,8 +77,10 @@ def generate_legacy_report(
     scenarios_meta = {s["id"]: s for s in manifest.get("scenarios", [])}
 
     # Separate valid and invalid (excluded) scenarios
-    valid_scenarios = [s for s in manifest.get("scenarios", []) if s.get("status") != "invalid"]
-    invalid_scenarios = [s for s in manifest.get("scenarios", []) if s.get("status") == "invalid"]
+    trial_ids = {r["id"] for r in trials}
+    scenarios_for_run = [s for s in manifest.get("scenarios", []) if s["id"] in trial_ids]
+    valid_scenarios = [s for s in scenarios_for_run if s.get("status") != "invalid"]
+    invalid_scenarios = [s for s in scenarios_for_run if s.get("status") == "invalid"]
 
     # Group trials by (scenario_id, config, approval_mode)
     trial_map_deny: dict[tuple[str, str], dict[str, Any]] = {}
@@ -96,7 +98,7 @@ def generate_legacy_report(
     configs = ["C0", "C1", "C2", "C3", "C4"]
 
     # Filter attack trials and benign trials
-    all_attack_ids = [s["id"] for s in manifest.get("scenarios", [])]
+    all_attack_ids = [s["id"] for s in scenarios_for_run]
     attack_ids = [s["id"] for s in valid_scenarios]
     benign_ids = sorted(
         {r["id"] for r in trials if r.get("category") == "benign" or r["id"].startswith("BENIGN-")}
@@ -647,7 +649,9 @@ def generate_chunk_5_14_report(
     configs = ["C0", "C1", "C2", "C2s", "C3", "C4"]
 
     # Attack partitioning
-    valid_attacks = [s for s in manifest.get("scenarios", []) if s.get("status") != "invalid"]
+    trial_ids = {r["id"] for r in trials}
+    manifest_scenarios = [s for s in manifest.get("scenarios", []) if s["id"] in trial_ids]
+    valid_attacks = [s for s in manifest_scenarios if s.get("status") != "invalid"]
     in_scope_attacks = [s for s in valid_attacks if s.get("classification") == "in-scope"]
     known_gap_attacks = [s for s in valid_attacks if s.get("classification") == "known-gap"]
     out_of_scope_attacks = [s for s in valid_attacks if s.get("classification") == "out-of-scope"]
@@ -1083,14 +1087,14 @@ def generate_chunk_5_14_report(
             "",
             "---",
             "",
-            f"## 8. All {len(manifest.get('scenarios', []))} Attack Scenarios Empirical Breakdown",
+            f"## 8. All {len(manifest_scenarios)} Attack Scenarios Empirical Breakdown",
             "",
             "| ID | Attack Name | Classification | C0 | C1 | C2 (`deny`/`appr`) | C2s (`deny`/`appr`) | C3 (`deny`/`appr`) | C4 (`deny`/`appr`) | Blocking Layer & Rule ID (C2) |",
             "|---|---|---|---|---|---|---|---|---|---|",
         ]
     )
 
-    for sc in manifest.get("scenarios", []):
+    for sc in manifest_scenarios:
         sc_id = sc["id"]
         name = sc.get("name", sc_id)
         classification = sc.get("classification", "in-scope").upper()
