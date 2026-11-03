@@ -1,0 +1,118 @@
+diff --git a/benchmark/configs/C2.yaml b/benchmark/configs/E0.yaml
+index 3e35d68..1141c68 100644
+--- a/benchmark/configs/C2.yaml
++++ b/benchmark/configs/E0.yaml
+@@ -1,4 +1,4 @@
+-# C2: Full Firewall (Policy + Flow Rules + Taint Tracking)
++# E0: C2 unchanged (Baseline Firewall)
+ version: 1
+ mode: enforce
+ serialize_calls: true
+diff --git a/benchmark/configs/C2.yaml b/benchmark/configs/E1.yaml
+index 3e35d68..dc31fc6 100644
+--- a/benchmark/configs/C2.yaml
++++ b/benchmark/configs/E1.yaml
+@@ -1,4 +1,4 @@
+-# C2: Full Firewall (Policy + Flow Rules + Taint Tracking)
++# E1: C2 with require_approval_capabilities for untrusted egress
+ version: 1
+ mode: enforce
+ serialize_calls: true
+@@ -111,7 +111,7 @@ flow_rules:
+ 
+   - id: deny-untrusted-egress
+     if_session_has: [untrusted_content]
+-    deny_capabilities: [egress]
++    require_approval_capabilities: [egress]
+     unless:
+       domain_allowlist:
+         - "docs.python.org"
+diff --git a/benchmark/configs/C2.yaml b/benchmark/configs/E2.yaml
+index 3e35d68..41505b1 100644
+--- a/benchmark/configs/C2.yaml
++++ b/benchmark/configs/E2.yaml
+@@ -1,4 +1,4 @@
+-# C2: Full Firewall (Policy + Flow Rules + Taint Tracking)
++# E2: C2 with curated trusted destinations in unless for both deny rules
+ version: 1
+ mode: enforce
+ serialize_calls: true
+@@ -108,6 +108,15 @@ flow_rules:
+         - "pypi.org"
+         - "json-schema.org"
+         - "cve.mitre.org"
++        - "developer.mozilla.org"
++        - "www.rfc-editor.org"
++        - "go.dev"
++        - "kubernetes.io"
++        - "docs.aws.amazon.com"
++        - "docs.djangoproject.com"
++        - "nvd.nist.gov"
++        - "registry.npmjs.org"
++        - "crates.io"
+ 
+   - id: deny-untrusted-egress
+     if_session_has: [untrusted_content]
+@@ -119,6 +128,15 @@ flow_rules:
+         - "pypi.org"
+         - "json-schema.org"
+         - "cve.mitre.org"
++        - "developer.mozilla.org"
++        - "www.rfc-editor.org"
++        - "go.dev"
++        - "kubernetes.io"
++        - "docs.aws.amazon.com"
++        - "docs.djangoproject.com"
++        - "nvd.nist.gov"
++        - "registry.npmjs.org"
++        - "crates.io"
+ 
+   - id: appr-untrusted-write
+     if_session_has: [untrusted_content]
+diff --git a/benchmark/configs/C2.yaml b/benchmark/configs/E3.yaml
+index 3e35d68..d445515 100644
+--- a/benchmark/configs/C2.yaml
++++ b/benchmark/configs/E3.yaml
+@@ -1,4 +1,4 @@
+-# C2: Full Firewall (Policy + Flow Rules + Taint Tracking)
++# E3: E1 + E2 (require_approval for untrusted egress + curated unless)
+ version: 1
+ mode: enforce
+ serialize_calls: true
+@@ -108,10 +108,19 @@ flow_rules:
+         - "pypi.org"
+         - "json-schema.org"
+         - "cve.mitre.org"
++        - "developer.mozilla.org"
++        - "www.rfc-editor.org"
++        - "go.dev"
++        - "kubernetes.io"
++        - "docs.aws.amazon.com"
++        - "docs.djangoproject.com"
++        - "nvd.nist.gov"
++        - "registry.npmjs.org"
++        - "crates.io"
+ 
+   - id: deny-untrusted-egress
+     if_session_has: [untrusted_content]
+-    deny_capabilities: [egress]
++    require_approval_capabilities: [egress]
+     unless:
+       domain_allowlist:
+         - "docs.python.org"
+@@ -119,6 +128,15 @@ flow_rules:
+         - "pypi.org"
+         - "json-schema.org"
+         - "cve.mitre.org"
++        - "developer.mozilla.org"
++        - "www.rfc-editor.org"
++        - "go.dev"
++        - "kubernetes.io"
++        - "docs.aws.amazon.com"
++        - "docs.djangoproject.com"
++        - "nvd.nist.gov"
++        - "registry.npmjs.org"
++        - "crates.io"
+ 
+   - id: appr-untrusted-write
+     if_session_has: [untrusted_content]

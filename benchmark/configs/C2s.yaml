@@ -52,6 +52,7 @@ policies:
           - "github.com"
           - "go.dev"
           - "nvd.nist.gov"
+          - "*.s3.amazonaws.com"
       http.fetch:
         domain_allowlist:
           - "docs.python.org"
@@ -78,6 +79,7 @@ policies:
           - "github.com"
           - "go.dev"
           - "nvd.nist.gov"
+          - "*.s3.amazonaws.com"
       github.get_issue:            {}
       github.create_issue_comment: {}
       github.list_issues:          {}
