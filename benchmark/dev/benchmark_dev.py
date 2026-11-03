@@ -970,6 +970,7 @@ def load_scenarios_from_manifests(
         manifest_paths = [
             Path("./benchmark/benign/manifest.json"),
             Path("./benchmark/benign/manifest_v2.json"),
+            Path("./benchmark/benign/manifest_v3.json"),
         ]
     elif isinstance(benign_manifest_path, (list, tuple)):
         manifest_paths = list(benign_manifest_path)
@@ -1185,9 +1186,7 @@ async def execute_scenario_through_proxy(
             sink_log=sink_log,
         )
         if denied_step_index is not None:
-            if approvals_count > 0 and (
-                blocking_layer == "flow" and rule_id == "appr-untrusted-write"
-            ):
+            if approvals_count > 0:
                 task_status = "held-and-denied"
             else:
                 task_status = "hard-blocked"
@@ -1432,6 +1431,10 @@ async def run_dev_matrix(
             "C2s": "Full Firewall without 'unless' exemptions (Stress Variant)",
             "C3": "Full Firewall + Detectors (Advisory, ADR-003)",
             "C4": "Full Firewall + Strict Tool-Description Pinning",
+            "E0": "Baseline Firewall (C2 unchanged)",
+            "E1": "Approval-based untrusted egress containment",
+            "E2": "Exemption-expanded untrusted egress containment (curated unless)",
+            "E3": "Hybrid: Approval-based egress + curated unless exemption",
         }.get(c, c)
 
         md.append(
@@ -1449,10 +1452,10 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(description="Dev benchmark runner")
     parser.add_argument(
-        "--output-dir", default="./benchmark/results/dev_20261102", help="Directory for results"
+        "--output-dir", default="./benchmark/results/dev_20261103", help="Directory for results"
     )
     parser.add_argument(
-        "--configs", default="C0,C1,C2,C2s,C3,C4", help="Comma-separated configs under test"
+        "--configs", default="C1,E0,E1,E2,E3,C2s", help="Comma-separated configs under test"
     )
     args = parser.parse_args()
 

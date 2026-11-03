@@ -1,0 +1,63 @@
+﻿============================= test session starts =============================
+platform win32 -- Python 3.14.4, pytest-9.1.1, pluggy-1.6.0
+rootdir: C:\Users\BIT PATNA\ai-agent-firewall
+configfile: pyproject.toml
+testpaths: tests
+plugins: anyio-4.15.1, hypothesis-6.168.5, platformdirs-4.13.0, asyncio-1.4.0, cov-7.1.0, timeout-2.4.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+timeout: 30.0s
+timeout method: thread
+timeout func_only: False
+collected 233 items / 8 deselected / 225 selected
+
+tests\test_adapters.py ...........                                       [  4%]
+tests\test_approvals.py .........                                        [  8%]
+tests\test_approvals_integration.py .......                              [ 12%]
+tests\test_audit.py ..........                                           [ 16%]
+tests\test_audit_integrity.py ....                                       [ 18%]
+tests\test_benchmark_analysis.py .....                                   [ 20%]
+tests\test_benchmark_runner.py ..                                        [ 21%]
+tests\test_cli_policy.py ...                                             [ 22%]
+tests\test_concurrency_flow.py ...                                       [ 24%]
+tests\test_contract.py ..s                                               [ 25%]
+tests\test_coverage_completion.py ......                                 [ 28%]
+tests\test_detectors.py .....                                            [ 30%]
+tests\test_detectors_mcp.py .....                                        [ 32%]
+tests\test_flow_properties.py ....                                       [ 34%]
+tests\test_flow_proxy_e2e.py ......                                      [ 36%]
+tests\test_flow_stateful.py .                                            [ 37%]
+tests\test_flow_truth_table.py ......................................... [ 55%]
+.....                                                                    [ 57%]
+tests\test_known_gaps.py xx                                              [ 58%]
+tests\test_locks.py .....                                                [ 60%]
+tests\test_matching.py ........s............                             [ 70%]
+tests\test_multi_upstream.py ...                                         [ 71%]
+tests\test_perf.py ...                                                   [ 72%]
+tests\test_pinning.py ............                                       [ 78%]
+tests\test_policy.py .....................                               [ 87%]
+tests\test_proxy_policy.py ...                                           [ 88%]
+tests\test_redaction.py ...                                              [ 90%]
+tests\test_replay.py .                                                   [ 90%]
+tests\test_session_coverage.py ...........                               [ 95%]
+tests\test_stubs.py ....                                                 [ 97%]
+tests\test_supervisor_unit.py ...                                        [ 98%]
+tests\test_toctou_defense.py .                                           [ 99%]
+tests\test_unsupported_surfaces.py ..                                    [100%]
+
+============================ slowest 15 durations =============================
+3.85s call     tests/test_multi_upstream.py::test_multi_upstream_aggregation_and_routing
+3.12s call     tests/test_pinning.py::test_pinstore_multiprocess_concurrency
+2.84s call     tests/test_approvals.py::test_approval_manager_multiprocess_concurrency
+2.83s call     tests/test_multi_upstream.py::test_non_required_upstream_degradation
+2.68s setup    tests/test_perf.py::test_check_policy_pure_matching_performance_budget
+1.72s call     tests/test_flow_stateful.py::TestSessionStateMachine::runTest
+1.51s call     tests/test_perf.py::test_check_policy_filesystem_resolution_performance
+0.97s call     tests/test_detectors.py::test_redos_safety_corpus
+0.76s call     tests/test_approvals_integration.py::test_approve_races_timeout_exactly_one_outcome
+0.66s call     tests/test_approvals_integration.py::test_proxy_restart_rebuilds_state_and_rejects_late_approval
+0.59s call     tests/test_approvals.py::test_concurrent_writers_append_only_log
+0.56s call     tests/test_locks.py::test_pin_store_lock_fault_injection
+0.45s call     tests/test_approvals_integration.py::test_cross_process_approval_with_real_cli
+0.43s call     tests/test_matching.py::test_hypothesis_path_normalization_idempotent
+0.34s call     tests/test_locks.py::test_approval_manager_lock_fault_injection
+========== 221 passed, 2 skipped, 8 deselected, 2 xfailed in 35.31s ===========
