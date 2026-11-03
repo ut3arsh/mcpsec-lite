@@ -6,7 +6,14 @@ from pathlib import Path
 
 import pytest
 
-from benchmark.analysis import generate_report, load_manifest, load_trials, wilson_interval
+from benchmark.analysis_legacy import (
+    generate_report as generate_legacy_report,
+)
+from benchmark.analysis_legacy import (
+    load_manifest,
+    load_trials,
+    wilson_interval,
+)
 
 
 def test_wilson_interval_properties() -> None:
@@ -40,9 +47,9 @@ def test_byte_for_byte_reproducibility() -> None:
     manifest = load_manifest(manifest_path)
 
     # First regeneration
-    run1 = generate_report(trials, manifest, date_str="2026-10-11")
+    run1 = generate_legacy_report(trials, manifest, date_str="2026-10-11")
     # Second regeneration
-    run2 = generate_report(trials, manifest, date_str="2026-10-11")
+    run2 = generate_legacy_report(trials, manifest, date_str="2026-10-11")
 
     # Pure function determinism
     assert run1 == run2
@@ -68,9 +75,13 @@ def test_chunk_5_14_byte_for_byte_reproducibility() -> None:
     benign_manifest = load_manifest(benign_manifest_path)
 
     # First regeneration
-    run1 = generate_report(trials, manifest, date_str="2026-11-01", benign_manifest=benign_manifest)
+    run1 = generate_legacy_report(
+        trials, manifest, date_str="2026-11-01", benign_manifest=benign_manifest
+    )
     # Second regeneration
-    run2 = generate_report(trials, manifest, date_str="2026-11-01", benign_manifest=benign_manifest)
+    run2 = generate_legacy_report(
+        trials, manifest, date_str="2026-11-01", benign_manifest=benign_manifest
+    )
 
     # Pure function determinism
     assert run1 == run2
@@ -105,7 +116,7 @@ def test_chunk_5_15_byte_for_byte_reproducibility() -> None:
     benign_manifest_v2 = load_manifest(benign_manifest_v2_path)
 
     # First regeneration
-    run1 = generate_report(
+    run1 = generate_legacy_report(
         trials,
         manifest,
         date_str="2026-11-02",
@@ -113,7 +124,7 @@ def test_chunk_5_15_byte_for_byte_reproducibility() -> None:
         benign_manifest_v2=benign_manifest_v2,
     )
     # Second regeneration
-    run2 = generate_report(
+    run2 = generate_legacy_report(
         trials,
         manifest,
         date_str="2026-11-02",
@@ -157,7 +168,7 @@ def test_chunk_5_16_byte_for_byte_reproducibility() -> None:
     benign_manifest_v3 = load_manifest(benign_manifest_v3_path)
 
     # First regeneration
-    run1 = generate_report(
+    run1 = generate_legacy_report(
         trials,
         manifest,
         date_str="2026-11-03",
@@ -166,7 +177,7 @@ def test_chunk_5_16_byte_for_byte_reproducibility() -> None:
         benign_manifest_v3=benign_manifest_v3,
     )
     # Second regeneration
-    run2 = generate_report(
+    run2 = generate_legacy_report(
         trials,
         manifest,
         date_str="2026-11-03",
@@ -184,4 +195,178 @@ def test_chunk_5_16_byte_for_byte_reproducibility() -> None:
 
     assert actual_bytes == expected_bytes, (
         "Regenerating Chunk 5.16 analysis report failed byte-for-byte check"
+    )
+
+
+def test_completeness_validation_detects_missing_row() -> None:
+    from benchmark.analysis import TrialCompletenessError, validate_trial_completeness
+
+    scenarios = ["BENIGN-01", "BENIGN-02"]
+    configs = ["C1", "C2"]
+    modes = ["deny_all", "approve_all"]
+
+    full_trials = [
+        {"id": sc, "config": cfg, "approval_mode": mode}
+        for sc in scenarios
+        for cfg in configs
+        for mode in modes
+    ]
+
+    # Valid case passes without error
+    validate_trial_completeness(full_trials, scenarios, configs, modes)
+
+    # Missing row: drop (BENIGN-02, C2, approve_all)
+    incomplete_trials = [
+        t
+        for t in full_trials
+        if not (
+            t["id"] == "BENIGN-02" and t["config"] == "C2" and t["approval_mode"] == "approve_all"
+        )
+    ]
+
+    with pytest.raises(TrialCompletenessError) as exc_info:
+        validate_trial_completeness(incomplete_trials, scenarios, configs, modes)
+
+    err = str(exc_info.value)
+    assert "BENIGN-02" in err
+    assert "C2" in err
+    assert "approve_all" in err
+    assert "Missing 1 required trial(s)" in err
+
+
+def test_completeness_validation_detects_duplicate_row() -> None:
+    from benchmark.analysis import TrialCompletenessError, validate_trial_completeness
+
+    scenarios = ["BENIGN-01", "BENIGN-02"]
+    configs = ["C1", "C2"]
+    modes = ["deny_all", "approve_all"]
+
+    full_trials = [
+        {"id": sc, "config": cfg, "approval_mode": mode}
+        for sc in scenarios
+        for cfg in configs
+        for mode in modes
+    ]
+
+    # Duplicate row: add duplicate of (BENIGN-01, C1, deny_all)
+    duplicated_trials = list(full_trials)
+    duplicated_trials.append({"id": "BENIGN-01", "config": "C1", "approval_mode": "deny_all"})
+
+    with pytest.raises(TrialCompletenessError) as exc_info:
+        validate_trial_completeness(duplicated_trials, scenarios, configs, modes)
+
+    err = str(exc_info.value)
+    assert "BENIGN-01" in err
+    assert "C1" in err
+    assert "deny_all" in err
+    assert "Duplicated 1 trial tuple(s)" in err
+
+
+def test_chunk_5_17a_rerun_byte_for_byte_reproducibility() -> None:
+    from benchmark.analysis import (
+        generate_analysis_report,
+        load_run_config,
+    )
+    from benchmark.analysis import (
+        load_manifest as load_manifest_v2,
+    )
+    from benchmark.analysis import (
+        load_trials as load_trials_v2,
+    )
+
+    trials_path = Path("benchmark/results/dev_20261103/trials.csv")
+    run_json_path = Path("benchmark/results/dev_20261103/run.json")
+    report_path = Path("benchmark/results/dev_analysis_20261104_rerun.md")
+
+    if not trials_path.exists() or not report_path.exists() or not run_json_path.exists():
+        pytest.skip("Benchmark result files not present")
+
+    trials = load_trials_v2(trials_path)
+    run_config = load_run_config(run_json_path, trials_path)
+    attack_manifest = load_manifest_v2(Path("benchmark/attacks/dev/manifest.json"))
+    benign_manifests = [
+        load_manifest_v2(Path("benchmark/benign/manifest.json")),
+        load_manifest_v2(Path("benchmark/benign/manifest_v2.json")),
+        load_manifest_v2(Path("benchmark/benign/manifest_v3.json")),
+    ]
+
+    # First regeneration
+    run1 = generate_analysis_report(
+        trials=trials,
+        run_config=run_config,
+        attack_manifest=attack_manifest,
+        benign_manifests=benign_manifests,
+    )
+    # Second regeneration
+    run2 = generate_analysis_report(
+        trials=trials,
+        run_config=run_config,
+        attack_manifest=attack_manifest,
+        benign_manifests=benign_manifests,
+    )
+
+    # Pure function determinism
+    assert run1 == run2
+
+    # Byte-for-byte identity against committed / generated file
+    expected_bytes = report_path.read_bytes().replace(b"\r\n", b"\n")
+    actual_bytes = run1.encode("utf-8")
+
+    assert actual_bytes == expected_bytes, (
+        "Regenerating Chunk 5.17a rerun analysis report failed byte-for-byte check"
+    )
+
+
+def test_chunk_5_17a_c5_byte_for_byte_reproducibility() -> None:
+    from benchmark.analysis import (
+        generate_analysis_report,
+        load_run_config,
+    )
+    from benchmark.analysis import (
+        load_manifest as load_manifest_v2,
+    )
+    from benchmark.analysis import (
+        load_trials as load_trials_v2,
+    )
+
+    trials_path = Path("benchmark/results/dev_20261104_c5/trials.csv")
+    run_json_path = Path("benchmark/results/dev_20261104_c5/run.json")
+    report_path = Path("benchmark/results/dev_analysis_20261104_c5.md")
+
+    if not trials_path.exists() or not report_path.exists() or not run_json_path.exists():
+        pytest.skip("Benchmark result files not present")
+
+    trials = load_trials_v2(trials_path)
+    run_config = load_run_config(run_json_path, trials_path)
+    attack_manifest = load_manifest_v2(Path("benchmark/attacks/dev/manifest.json"))
+    benign_manifests = [
+        load_manifest_v2(Path("benchmark/benign/manifest.json")),
+        load_manifest_v2(Path("benchmark/benign/manifest_v2.json")),
+        load_manifest_v2(Path("benchmark/benign/manifest_v3.json")),
+    ]
+
+    # First regeneration
+    run1 = generate_analysis_report(
+        trials=trials,
+        run_config=run_config,
+        attack_manifest=attack_manifest,
+        benign_manifests=benign_manifests,
+    )
+    # Second regeneration
+    run2 = generate_analysis_report(
+        trials=trials,
+        run_config=run_config,
+        attack_manifest=attack_manifest,
+        benign_manifests=benign_manifests,
+    )
+
+    # Pure function determinism
+    assert run1 == run2
+
+    # Byte-for-byte identity against committed / generated file
+    expected_bytes = report_path.read_bytes().replace(b"\r\n", b"\n")
+    actual_bytes = run1.encode("utf-8")
+
+    assert actual_bytes == expected_bytes, (
+        "Regenerating Chunk 5.17a C5 analysis report failed byte-for-byte check"
     )
