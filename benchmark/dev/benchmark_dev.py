@@ -1017,12 +1017,25 @@ async def execute_scenario_through_proxy(
     tmp_path: Path,
     approval_mode: Literal["deny_all", "approve_all"] = "deny_all",
     predicate_meta: dict[str, Any] | None = None,
-) -> tuple[bool, int, float, bool, str, str, str, int | None, list[str], bool, str]:
+) -> tuple[
+    bool,
+    int,
+    float,
+    bool,
+    str,
+    str,
+    str,
+    int | None,
+    list[str],
+    bool,
+    str,
+    list[str],
+]:
     """Execute scenario through a genuine ProxySession.
 
     Returns (target_succeeded, approvals_count, duration_ms, false_positive_flag,
              blocking_layer, rule_id, decision_reason, denied_step_index,
-             taint_acquired, success_check_passed, task_status).
+             taint_acquired, success_check_passed, task_status, approval_rules).
     """
     audit_file = tmp_path / f"audit_{scenario.id}_{config_name}_{approval_mode}.jsonl"
     audit_file.unlink(missing_ok=True)
@@ -1092,11 +1105,14 @@ async def execute_scenario_through_proxy(
     approval_manager = ApprovalManager(log_path=appr_log)
     orig_req = approval_manager.request_approval
     approvals_count = 0
+    approval_rules_list: list[str] = []
 
     def handle_approval_request(call_id: str, *args: Any, **kwargs: Any) -> Any:
         nonlocal approvals_count
         approvals_count += 1
         req = orig_req(call_id, *args, **kwargs)
+        if req and getattr(req, "rule_id", None):
+            approval_rules_list.append(str(req.rule_id))
         if scenario.id == "ATTACK-17":
             approval_manager.approve(call_id, operator="auto-approver", reason="fatigue bypass")
         elif approval_mode == "approve_all":
@@ -1213,6 +1229,7 @@ async def execute_scenario_through_proxy(
         taint_acquired,
         success_check_passed,
         task_status,
+        approval_rules_list,
     )
 
 
@@ -1286,6 +1303,7 @@ async def run_dev_matrix(
                     t_acq,
                     sc_passed,
                     t_status,
+                    appr_rules,
                 ) = await execute_scenario_through_proxy(
                     sc,
                     policies[c],
@@ -1322,6 +1340,7 @@ async def run_dev_matrix(
                         else ("completed" if (sc.category == "benign" and succ) else "blocked"),
                         "approvals_requested": str(appr_count),
                         "denied_step_index": str(d_step) if d_step is not None else "",
+                        "approval_rules": ",".join(appr_rules),
                     }
                 )
 
@@ -1340,6 +1359,7 @@ async def run_dev_matrix(
                     t_acq,
                     sc_passed,
                     t_status,
+                    appr_rules,
                 ) = await execute_scenario_through_proxy(
                     sc,
                     policies[c],
@@ -1376,6 +1396,7 @@ async def run_dev_matrix(
                         else ("completed" if (sc.category == "benign" and succ) else "blocked"),
                         "approvals_requested": str(appr_count),
                         "denied_step_index": str(d_step) if d_step is not None else "",
+                        "approval_rules": ",".join(appr_rules),
                     }
                 )
 
@@ -1398,6 +1419,7 @@ async def run_dev_matrix(
         "outcome",
         "approvals_requested",
         "denied_step_index",
+        "approval_rules",
     ]
     with open(trials_csv_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
@@ -1435,6 +1457,7 @@ async def run_dev_matrix(
             "E1": "Approval-based untrusted egress containment",
             "E2": "Exemption-expanded untrusted egress containment (curated unless)",
             "E3": "Hybrid: Approval-based egress + curated unless exemption",
+            "C5": "Full Firewall with Audited Taint Sources (E3 + Full U/P Mapping)",
         }.get(c, c)
 
         md.append(
