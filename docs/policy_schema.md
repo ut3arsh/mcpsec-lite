@@ -138,14 +138,21 @@ flow_rules:
 | `if_session_has` | list of labels | yes | **All** listed labels must be present (AND). |
 | `deny_capabilities` | list of tags | one of the two | Matching call is denied. |
 | `require_approval_capabilities` | list of tags | one of the two | Matching call is held for approval. |
-| `unless` | object | no | Optional exemption: `unless: { domain_allowlist: [...] }`. Valid only on rules denying/requiring approval for `egress`. |
+| `unless` | object | no | Optional exemption: `unless: { domain_allowlist: [...] }` or `unless: { path_allowlist: [...] }`. |
 
 ### 5.1 Flow rule exemption semantics (`unless`)
-- A flow rule may carry `unless: { domain_allowlist: [...] }`.
-- The rule is skipped for a call **only if every domain-constrained argument parses and matches** the list.
-- **Fail closed:** Any parse failure, unparsable URL, missing argument, or non-matching domain causes the rule to apply.
-- `unless` is valid **only** on rules whose `deny_capabilities` or `require_approval_capabilities` include `egress`, and only for tools with a domain adapter (e.g. `domain_args`).
-- Matching reuses standard domain matching (Unicode normalization, userinfo/IP/scheme rejection).
+- A flow rule may carry `unless: { domain_allowlist: [...] }` or `unless: { path_allowlist: [...] }`.
+- `unless.domain_allowlist` is valid **only** on rules whose `deny_capabilities` or `require_approval_capabilities` include `egress`, and only for tools with a domain adapter (e.g. `domain_args`).
+- `unless.path_allowlist` is valid **only** on rules whose `deny_capabilities` or `require_approval_capabilities` include `write`, and only for tools with a path adapter (e.g. `path_args`).
+- The rule is skipped for a call **only if every constrained argument parses, normalizes, and matches** the allowlist.
+- **Fail closed:** Any parse failure, unparsable URL, missing argument, non-matching domain, or path normalization failure (NUL bytes, device namespaces, UNC shares, alternate data streams, or directory traversal outside allowlist) causes the exemption to be skipped and the flow rule to apply.
+- Matching reuses standard domain matching for `domain_allowlist` and canonical `normalize_path` glob matching for `path_allowlist`.
+- Misconfigurations are rejected at policy validation time:
+  - `ERR_INVALID_UNLESS`: `unless` block contains neither `domain_allowlist` nor `path_allowlist`.
+  - `ERR_UNLESS_PATH_NON_WRITE`: `path_allowlist` configured on a rule whose capabilities do not include `write`.
+  - `ERR_INVALID_UNLESS_PATH`: `path_allowlist` is not a non-empty list of non-empty strings.
+  - `ERR_INVALID_PATH_PATTERN`: a glob pattern in `path_allowlist` fails to compile.
+  - `ERR_INVALID_DOMAIN_PATTERN`: a domain pattern in `domain_allowlist` fails to compile.
 
 Evaluation:
 1. Compute the set of rules whose `if_session_has` ⊆ current session labels.

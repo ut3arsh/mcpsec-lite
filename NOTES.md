@@ -191,3 +191,10 @@ Measured via `tests/test_perf.py` on a policy containing **1,000 rules across 10
    - *CLI-path lock timeout*: Set to 5.0 s (`DEFAULT_CLI_LOCK_TIMEOUT_SECONDS = 5.0`). Human operators and administrative scripts running `mcpsec-approve` or `mcpsec-pin` can afford to wait several seconds for a concurrent proxy write to finish without disrupting live turns.
    - *Non-blocking asyncio loop*: All lock-protected file operations in `ProxySession` (`check_tool`, `approve_tool`, `check_pinning`, `request_approval`, `_await_approval` disk sync) are offloaded to worker threads using `anyio.to_thread.run_sync`. An asyncio ticker task running concurrently with contested locks verified maximum delay < 50 ms (measured ~10-15 ms).
 
+
+
+7. **[x Applied] Benchmark Configuration C5 Adoption, Attended vs Unattended Deployment Modes, and Flow-Rule Path Exemptions (ADR-018 & Chunk 5.17)**:
+   - *C5 Freeze Candidate*: Adopted E3 as C5. C0-C4 definitions preserved.
+   - *Deployment Modes*: Evaluated under unattended (`deny_all`, holds time out to deny) and attended (`approve_all`, worst-case fatigue bound).
+   - *Flow-Rule Path Exemptions (`unless.path_allowlist`)*: Introduced `unless.path_allowlist` on write-capability flow rules. Evaluated only for tools declaring path argument adapters. All arguments must normalize canonically via `normalize_path` (NUL byte, UNC, device namespace, alternate data stream, directory traversal rejection); any parse failure fails closed and triggers the flow rule. Misconfigurations rejected with `ERR_INVALID_UNLESS_PATH`, `ERR_UNLESS_PATH_NON_WRITE`, `ERR_INVALID_PATH_PATTERN`, `ERR_INVALID_UNLESS`.
+   - *Experiment E4 & ATTACK-31*: E4 evaluates scratch-path exemption `sandbox/notes/**` on `appr-untrusted-write`. ATTACK-31 evaluates cross-session persistence via scratch notes file.

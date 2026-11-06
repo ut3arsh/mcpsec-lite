@@ -118,6 +118,11 @@ All four are pure functions over explicit state, so they are unit-testable and f
 - Taint updates commit when a response is processed. A call issued concurrently with a tainting call is evaluated against the pre-update state. Mitigation: `serialize_calls: true` (default in strict mode) serializes calls per session. Document as a limitation otherwise.
 - Audit log: append-only JSONL, single writer task, fsync per entry in strict mode.
 
+### 4.5 Deployment profiles & operating modes
+Security claims are evaluated under two primary operating modes (ADR-018):
+- **Unattended Mode (`deny_all`):** Operator offline. Any action held for approval times out and is denied. Guarantees fail-closed containment against indirect prompt injection and unauthorized egress.
+- **Attended Mode (`approve_all`):** Operator online to review pending approvals. Tested under `approve_all` to establish the upper bound on risk from human operator fatigue or rubber-stamping.
+
 ## 5. Policy & taint design
 
 ### 5.1 Capabilities
@@ -158,6 +163,12 @@ flow_rules:
     unless:
       domain_allowlist: ["docs.internal", "*.safe.org"]
 
+  - id: appr-untrusted-write
+    if_session_has: [untrusted_content]
+    require_approval_capabilities: [write]
+    unless:
+      path_allowlist: ["sandbox/notes/**"]
+
   - id: no-egress-after-private
     if_session_has: [private_data]
     deny_capabilities: [egress]
@@ -169,7 +180,7 @@ mode: enforce          # audit | enforce
 approval:
   allow_clear: [untrusted_content]   # private_data cannot be cleared in-session
 ```
-Semantics: labels are monotonic within a session and cleared only by an explicit, logged human approval (`mcpsec-approve clear-taint <session_id> untrusted_content`). Approval is CLI-based in v1 (web UI is optional/stretch).
+Semantics: labels are monotonic within a session and cleared only by an explicit, logged human approval (`mcpsec-approve clear-taint <session_id> untrusted_content`). Approval is CLI-based in v1 (web UI is optional/stretch). Flow rules support `unless` exemptions for `egress` capabilities (`domain_allowlist`) and `write` capabilities (`path_allowlist`), both failing closed if unparsable or unmatched.
 
 ### 5.4 Per-agent allowlists (baseline layer)
 ```yaml
@@ -211,9 +222,10 @@ JSONL, one entry per call and per approval/pin event. Full spec in `docs/audit_l
 ## 9. Benchmark plan (summary; full spec in `docs/benchmark_spec.md`)
 - **External:** AgentDojo (primary), InjecAgent (cut first if time slips). These use their own harnesses; budget ~2 weeks of adapter work via `mcpsec_core`.
 - **MCP-native, held-out:** GitHub-issue and web-page injection scenarios written **after** detector logic is frozen; never used for tuning.
-- **Configs:** baseline · policy only · policy + flow · policy + flow + detectors.
+- **Configs:** baseline (C0) · policy only (C1) · policy + flow (C2) · policy + flow + detectors (C3) · strict pinning (C4) · freeze candidate (C5).
+- **Deployment modes:** Unattended (`deny_all`) and Attended (`approve_all`).
 - **Models:** 2–3 (one open-weight), multiple trials each, report variance. Cost budget ≈ $100–200.
-- **Metrics:** attack success rate, false-positive rate on benign runs, latency overhead.
+- **Metrics:** attack success rate (unattended vs attended), false-positive rate on benign runs, latency overhead.
 
 ## 10. Limitations
 See §3 blind spots. Additionally: results depend on model behavior; benchmark attack sets are not exhaustive; the proxy is not a substitute for OS-level sandboxing.

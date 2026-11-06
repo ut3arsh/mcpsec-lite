@@ -110,3 +110,25 @@ Format: **Status · Context · Decision · Consequences.**
 **Context:** Caching path resolutions across tool calls introduces a race window where symlinks or directory junctions can be retargeted to sensitive locations outside the sandbox after validation.
 **Decision:** Never cache filesystem path canonicalization across tool calls. Every path check resolves real paths dynamically against the OS filesystem table on every invocation.
 **Consequences:** Closes cache-window symlink retargeting attacks; eliminates stale path state at negligible latency cost (<2 ms per call).
+
+## ADR-018 — Benchmark Configuration C5 Adoption, Attended vs Unattended Deployment Modes, and Flow-Rule Path Exemptions
+**Status:** Accepted · 2026-11-06
+**Context:**
+1. The Pareto evaluation in Chunk 5.16 demonstrated that configuration E3 (approval-based untrusted egress containment paired with curated domain unless exemptions) passed all four pre-registered selection bars (hard-block rate 0.00% <= 5.0%, approve-all completion 100.0% >= 90.0%, in-scope ASR under deny_all 5.0% <= 10.0%, and approvals per task 0.54 <= 1.0). The owner has selected E3 as the freeze candidate and adopted it as benchmark configuration C5.
+2. Real-world agent deployments operate under two primary operating modes:
+   - **Unattended Deployment Mode:** Human operators are offline or unavailable. Any tool invocation triggering an approval requirement times out and fails closed to denial (`deny_all`). Guarantees: rigorous, automated protection against indirect prompt injection and unauthorized egress.
+   - **Attended Deployment Mode:** Human operators review and decide pending approvals (`approve_all` models the worst-case scenario where an operator approves all flagged calls). Guarantees: benign workflows requiring elevated actions proceed, but operator fatigue or uncritical approval creates an exposure window.
+3. In benign workflows, legitimate agents frequently generate local synthesis files, scratch notes, or changelogs after reading untrusted external documentation or issues. Under C5, `appr-untrusted-write` holds all write operations for human approval once untrusted taint is present (accounting for ~76% of total approval friction). To alleviate operator burden without compromising security-sensitive project code, a path-level exemption mechanism is required for isolated scratch directories.
+**Decision:**
+1. Freeze E3 as benchmark configuration `C5` (`benchmark/configs/C5.yaml`). Definitions of C0–C4 remain immutable. E0–E3 configuration files remain preserved for reproducibility.
+2. Formally define evaluation metrics across both deployment modes:
+   - `Hard-block rate`: fraction of benign workflows denied outright at policy or flow layer without an approval path (k/n, %).
+   - `Approval-needed rate`: fraction of benign workflows requiring at least one approval before completion (k/n, %).
+   - `Approvals per task`: mean approvals requested per task under `approve_all` before completion, partitioned by triggering rule.
+   - `ASR under deny_all`: unattended deployment guarantee (worst-case attack success under automated timeout).
+   - `ASR under approve_all`: attended deployment upper bound (worst-case attack success under complete approval fatigue).
+3. Introduce flow-rule `unless: { path_allowlist: [...] }`. Valid ONLY on flow rules whose capabilities include `write`, and applicable ONLY to tools declaring a path argument adapter. Semantics mirror domain `unless`: the rule is skipped if and only if EVERY path-constrained argument successfully parses, normalizes with canonical realpath/UNC/device/junction rules, and matches the allowlist; any parse failure or non-match fails closed so the flow rule applies. Invalid configurations fail closed with dedicated error codes (`ERR_INVALID_UNLESS_PATH`, `ERR_UNLESS_PATH_NON_WRITE`, `ERR_INVALID_PATH_PATTERN`).
+**Consequences:**
+- C5 provides an explicit freeze candidate evaluated under both unattended and attended paradigms.
+- Flow-rule path exemptions enable fine-grained isolation of scratch directories (e.g. `sandbox/notes/**`), reducing human operator fatigue on benign synthesis tasks.
+- If an agent writes malicious instructions to an exempt scratch directory (e.g. cross-session persistence), path exemptions permit the write without approval; this is tracked as a documented known-gap tradeoff.

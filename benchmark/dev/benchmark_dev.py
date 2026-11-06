@@ -1457,7 +1457,8 @@ async def run_dev_matrix(
             "E1": "Approval-based untrusted egress containment",
             "E2": "Exemption-expanded untrusted egress containment (curated unless)",
             "E3": "Hybrid: Approval-based egress + curated unless exemption",
-            "C5": "Full Firewall with Audited Taint Sources (E3 + Full U/P Mapping)",
+            "C5": "Freeze Candidate (E3 adopted: policy allowlists + session taint + approval egress + curated unless)",
+            "E4": "Full Firewall with Scratch Notes Write Exemption (C5 + Path Unless)",
         }.get(c, c)
 
         md.append(

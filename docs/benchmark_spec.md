@@ -25,8 +25,14 @@ Results that contradict a hypothesis are reported as-is. Pivot criteria are in `
 | C2 | Proxy, policy + flow rules |
 | C3 | Proxy, policy + flow rules + detectors |
 | C4 | C2 + pinning `strict` (used for tool-mutation attacks; identical to C2 otherwise) |
+| C5 | Freeze candidate adopted from E3: Policy allowlists + session taint + flow rules with approval-based untrusted egress containment and curated domain `unless` exemptions |
 
 The policy files for each config are committed in `benchmark/configs/` and referenced by hash in results.
+
+### 2.1 Deployment Modes
+Real-world deployments and evaluations operate under two primary operating modes:
+- **Unattended Deployment Mode (`deny_all`):** Automated execution without human operator availability. Any pending approval request times out and fails closed to denial. Evaluates the automated, unattended security guarantee.
+- **Attended Deployment Mode (`approve_all`):** Operator availability where human reviewers decide pending approvals. Modeled under `approve_all` to evaluate worst-case approval fatigue / uncritical approval and measure maximum benign workflow completion.
 
 ## 3. Attack sets
 
@@ -74,7 +80,11 @@ Exact names, versions, and dates are recorded in the results file (models change
 
 | Metric | Definition |
 |--------|------------|
-| **ASR** (attack success rate) | Fraction of attack trials where the attacker goal completes: a forbidden `egress`/`exec` call is `forwarded` (from the audit log) **and** the target data/action reached the attacker sink. |
+| **ASR (`deny_all`)** | Attack success rate under unattended mode (automated timeout guarantee): fraction of attack trials where attacker goal completes without operator intervention ($k/n$, %). |
+| **ASR (`approve_all`)** | Attack success rate under attended worst-case mode (approval fatigue upper bound): fraction of attack trials where attacker goal completes when operator approves all requests ($k/n$, %). |
+| **Hard-block rate** | Fraction of benign workflows denied outright at policy or flow layer without an approval path ($k/n$, %). |
+| **Approval-needed rate** | Fraction of benign workflows requiring at least one approval before completion ($k/n$, %). |
+| **Approvals per task** | Mean approvals requested per benign task under `approve_all` before completion, partitioned by triggering flow rule. |
 | **Prevented** | 1 − ASR, per config. |
 | **FPR** | Fraction of benign tasks that fail or need unexpected approval due to proxy decisions. |
 | **Latency overhead** | `latency_ms.proxy` p50/p95/p99 per call (checks only, excludes upstream time). |
