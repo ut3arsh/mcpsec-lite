@@ -1,0 +1,162 @@
+﻿=== Mutation (a): treat parse failure as match ===
+============================= test session starts =============================
+platform win32 -- Python 3.14.4, pytest-9.1.1, pluggy-1.6.0
+rootdir: C:\Users\BIT PATNA\ai-agent-firewall
+configfile: pyproject.toml
+plugins: anyio-4.15.1, hypothesis-6.168.5, platformdirs-4.13.0, asyncio-1.4.0, cov-7.1.0, timeout-2.4.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+timeout: 30.0s
+timeout method: thread
+timeout func_only: False
+collected 20 items / 19 deselected / 1 selected
+
+tests\test_flow_path_unless.py F                                         [100%]
+
+================================== FAILURES ===================================
+______________ test_flow_path_unless_parse_failure_fails_closed _______________
+
+flow_path_policy = Policy(version=1, mode='enforce', serialize_calls=True, policy_hash='47d14017bc4f3404ea876b2407e3b03e49a6f292f8ed68f3e...rces_by_tool={'http.fetch': (CompiledTaintSource(label='untrusted_content', tool_id='http.fetch', args_patterns={}),)})
+
+    def test_flow_path_unless_parse_failure_fails_closed(flow_path_policy: Policy) -> None:
+        """A path containing a NUL byte fails closed and is held for approval."""
+        session = SessionState(session_id="s1", taint=frozenset({"untrusted_content"}))
+        call = ToolCall(
+            call_id="c3",
+            session_id="s1",
+            agent_id="a1",
+            server="fs",
+            tool="write_file",
+            args={"path": "sandbox/notes/\x00evil.md", "content": "payload"},
+            capabilities=["write"],
+        )
+        decision = check_flow(session, call, flow_path_policy)
+>       assert decision.decision == "require_approval"
+E       AssertionError: assert 'allow' == 'require_approval'
+E         
+E         - require_approval
+E         + allow
+
+tests\test_flow_path_unless.py:148: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/test_flow_path_unless.py::test_flow_path_unless_parse_failure_fails_closed
+====================== 1 failed, 19 deselected in 1.29s =======================
+
+=== Mutation (b): skip normalization ===
+============================= test session starts =============================
+platform win32 -- Python 3.14.4, pytest-9.1.1, pluggy-1.6.0
+rootdir: C:\Users\BIT PATNA\ai-agent-firewall
+configfile: pyproject.toml
+plugins: anyio-4.15.1, hypothesis-6.168.5, platformdirs-4.13.0, asyncio-1.4.0, cov-7.1.0, timeout-2.4.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+timeout: 30.0s
+timeout method: thread
+timeout func_only: False
+collected 20 items / 19 deselected / 1 selected
+
+tests\test_flow_path_unless.py F                                         [100%]
+
+================================== FAILURES ===================================
+______________ test_flow_path_unless_symlink_escape_fails_closed ______________
+
+tmp_path = WindowsPath('C:/Users/BIT PATNA/AppData/Local/Temp/pytest-of-BIT PATNA/pytest-240/test_flow_path_unless_symlink_0')
+
+    def test_flow_path_unless_symlink_escape_fails_closed(tmp_path: Any) -> None:
+        """Symlinks resolving outside allowlist fail exemption and trigger the rule."""
+        notes_dir = tmp_path / "sandbox" / "notes"
+        src_dir = tmp_path / "sandbox" / "src"
+        notes_dir.mkdir(parents=True)
+        src_dir.mkdir(parents=True)
+        target_outside = src_dir / "target.txt"
+        target_outside.write_text("outside", encoding="utf-8")
+    
+        link_path = notes_dir / "link_to_src"
+        if os.name == "nt":
+            import _winapi
+    
+            _winapi.CreateJunction(str(src_dir), str(link_path))
+        else:
+            os.symlink(str(src_dir), str(link_path), target_is_directory=True)
+    
+        notes_glob = f"{notes_dir.as_posix()}/**"
+        policy_yaml = f"""
+    version: 1
+    mode: enforce
+    capabilities:
+      fs.write_file: [write]
+    policies:
+      - agent: "*"
+        tools:
+          fs.write_file: {{}}
+    flow_rules:
+      - id: appr-write
+        if_session_has: [untrusted_content]
+        require_approval_capabilities: [write]
+        unless:
+          path_allowlist: ["{notes_glob}"]
+    """
+        pol, _, _ = load_policy(policy_yaml)
+        session = SessionState(session_id="s1", taint=frozenset({"untrusted_content"}))
+        call = ToolCall(
+            call_id="c13",
+            session_id="s1",
+            agent_id="a1",
+            server="fs",
+            tool="write_file",
+            args={"path": str(link_path / "target.txt"), "content": "escape"},
+            capabilities=["write"],
+        )
+        decision = check_flow(session, call, pol)
+>       assert decision.decision == "require_approval"
+E       AssertionError: assert 'allow' == 'require_approval'
+E         
+E         - require_approval
+E         + allow
+
+tests\test_flow_path_unless.py:363: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/test_flow_path_unless.py::test_flow_path_unless_symlink_escape_fails_closed
+====================== 1 failed, 19 deselected in 1.37s =======================
+
+=== Mutation (c): exemption applied to a non-write rule ===
+============================= test session starts =============================
+platform win32 -- Python 3.14.4, pytest-9.1.1, pluggy-1.6.0
+rootdir: C:\Users\BIT PATNA\ai-agent-firewall
+configfile: pyproject.toml
+plugins: anyio-4.15.1, hypothesis-6.168.5, platformdirs-4.13.0, asyncio-1.4.0, cov-7.1.0, timeout-2.4.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+timeout: 30.0s
+timeout method: thread
+timeout func_only: False
+collected 20 items / 19 deselected / 1 selected
+
+tests\test_flow_path_unless.py F                                         [100%]
+
+================================== FAILURES ===================================
+________________ test_policy_validation_unless_path_non_write _________________
+
+    def test_policy_validation_unless_path_non_write() -> None:
+        """path_allowlist on a non-write flow rule is rejected with ERR_UNLESS_PATH_NON_WRITE."""
+        yaml_src = """
+    version: 1
+    mode: enforce
+    capabilities:
+      http.fetch: [egress]
+    policies:
+      - agent: "*"
+        tools:
+          http.fetch: {}
+    flow_rules:
+      - id: deny-egress
+        if_session_has: [untrusted_content]
+        deny_capabilities: [egress]
+        unless:
+          path_allowlist: ["sandbox/notes/**"]
+    """
+>       with pytest.raises(PolicyError) as exc_info:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE PolicyError
+
+tests\test_flow_path_unless.py:390: Failed
+=========================== short test summary info ===========================
+FAILED tests/test_flow_path_unless.py::test_policy_validation_unless_path_non_write
+====================== 1 failed, 19 deselected in 1.46s =======================

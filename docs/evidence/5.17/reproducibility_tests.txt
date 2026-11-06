@@ -1,0 +1,25 @@
+﻿============================= test session starts =============================
+platform win32 -- Python 3.14.4, pytest-9.1.1, pluggy-1.6.0 -- C:\Users\BIT PATNA\AppData\Local\Programs\Python\Python314\python.exe
+cachedir: .pytest_cache
+hypothesis profile 'dev' -> deadline=None, max_examples=50, suppress_health_check=(HealthCheck.too_slow,)
+rootdir: C:\Users\BIT PATNA\ai-agent-firewall
+configfile: pyproject.toml
+plugins: anyio-4.15.1, hypothesis-6.168.5, platformdirs-4.13.0, asyncio-1.4.0, cov-7.1.0, timeout-2.4.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+timeout: 30.0s
+timeout method: thread
+timeout func_only: False
+collecting ... collected 10 items
+
+tests/test_benchmark_analysis.py::test_wilson_interval_properties PASSED [ 10%]
+tests/test_benchmark_analysis.py::test_byte_for_byte_reproducibility PASSED [ 20%]
+tests/test_benchmark_analysis.py::test_chunk_5_14_byte_for_byte_reproducibility PASSED [ 30%]
+tests/test_benchmark_analysis.py::test_chunk_5_15_byte_for_byte_reproducibility PASSED [ 40%]
+tests/test_benchmark_analysis.py::test_chunk_5_16_byte_for_byte_reproducibility PASSED [ 50%]
+tests/test_benchmark_analysis.py::test_completeness_validation_detects_missing_row PASSED [ 60%]
+tests/test_benchmark_analysis.py::test_completeness_validation_detects_duplicate_row PASSED [ 70%]
+tests/test_benchmark_analysis.py::test_chunk_5_17a_rerun_byte_for_byte_reproducibility PASSED [ 80%]
+tests/test_benchmark_analysis.py::test_chunk_5_17a_c5_byte_for_byte_reproducibility PASSED [ 90%]
+tests/test_benchmark_analysis.py::test_chunk_5_17_e4_byte_for_byte_reproducibility PASSED [100%]
+
+============================= 10 passed in 0.28s ==============================

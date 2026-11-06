@@ -1,0 +1,31 @@
+﻿python : CoverageGateError: Coverage failed gate! Statements: 94.07% (min 90.00%), Branches: 92.72% (min 90.00%), 
+Floor failures: ['`mcpsec_core/approvals.py`: stmts=86.72% (min 85.00%), branches=80.30% (min 85.00%)']
+At line:1 char:122
++ ... } catch {}; python scripts/check_coverage.py docs/evidence/5.17/cover ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (CoverageGateErr... (min 85.00%)']:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+## 🛡️ Combined Cross-Platform Coverage Gate (`mcpsec_core`)
+
+- **Combined Statement Coverage:** **`94.07%`** (1761/1872) — Target: $\ge 90.00\%$
+- **Combined Branch Coverage:** **`92.72%`** (701/756) — Target: $\ge 90.00\%$
+- **Combined Total Coverage:** **`93.68%`** (2462/2628)
+- **Per-Module Floor (>= 85.00% stmts & branches):** ❌ **FAILED** — `mcpsec_core/approvals.py`: stmts=86.72% (min 85.00%), branches=80.30% (min 85.00%)
+
+| Module | Statements | Statement (%) | Branches | Branch (%) |
+|---|---|---|---|---|
+| `mcpsec_core/__init__.py` | 1/1 | 100.00% | 0/0 | 100.00% |
+| `mcpsec_core/adapters.py` | 87/92 | 94.57% | 47/52 | 90.38% |
+| `mcpsec_core/approvals.py` | 209/241 | 86.72% | 53/66 | 80.30% |
+| `mcpsec_core/audit.py` | 222/223 | 99.55% | 77/80 | 96.25% |
+| `mcpsec_core/detectors.py` | 108/110 | 98.18% | 59/64 | 92.19% |
+| `mcpsec_core/flow.py` | 100/102 | 98.04% | 62/68 | 91.18% |
+| `mcpsec_core/matching.py` | 150/158 | 94.94% | 83/86 | 96.51% |
+| `mcpsec_core/models.py` | 157/159 | 98.74% | 14/14 | 100.00% |
+| `mcpsec_core/pinning.py` | 291/331 | 87.92% | 91/102 | 89.22% |
+| `mcpsec_core/policy.py` | 378/397 | 95.21% | 177/186 | 95.16% |
+| `mcpsec_core/taint.py` | 58/58 | 100.00% | 38/38 | 100.00% |
+
+❌ **GATE STATUS: FAILED** — Gate violation: module floor failed: `mcpsec_core/approvals.py`: stmts=86.72% (min 85.00%), branches=80.30% (min 85.00%).
+
