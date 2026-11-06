@@ -71,7 +71,8 @@ class TaintSourceEntryModel(PolicyBaseModel):
 
 
 class FlowRuleUnlessModel(PolicyBaseModel):
-    domain_allowlist: list[str]
+    domain_allowlist: list[Any] | None = None
+    path_allowlist: list[Any] | None = None
 
 
 class FlowRuleModel(PolicyBaseModel):
@@ -142,6 +143,9 @@ class CompiledFlowRule:
     unless_domain_rules: tuple[tuple[str, bool, re.Pattern[str] | None], ...] = ()
     unless_exact_hosts: frozenset[str] = frozenset()
     unless_wildcard_regexes: tuple[re.Pattern[str], ...] = ()
+    has_domain_unless: bool = False
+    has_path_unless: bool = False
+    unless_path_patterns: tuple[re.Pattern[str], ...] = ()
     if_session_has_tuple: tuple[str, ...] = ()
     deny_caps_tuple: tuple[str, ...] = ()
     appr_caps_tuple: tuple[str, ...] = ()
@@ -319,49 +323,106 @@ def validate_and_compile_policy(
                 }
             )
 
-    # 6b. Validation for 'unless' exemption on flow_rules (ADR-012)
+    # 6b. Validation for 'unless' exemption on flow_rules (ADR-012, ADR-018)
     for i, f_rule in enumerate(parsed_schema.flow_rules):
         if f_rule.unless is not None:
-            domains = f_rule.unless.domain_allowlist
-            if (
-                not domains
-                or not isinstance(domains, list)
-                or not all(isinstance(d, str) and d.strip() for d in domains)
-            ):
-                errors.append(
-                    {
-                        "code": "ERR_INVALID_UNLESS",
-                        "path": f"flow_rules[{i}].unless.domain_allowlist",
-                        "message": (
-                            f"Flow rule '{f_rule.id}' unless must specify a non-empty domain_allowlist list of strings"
-                        ),
-                    }
-                )
-            all_rule_caps = set(f_rule.deny_capabilities or []) | set(
-                f_rule.require_approval_capabilities or []
-            )
-            if "egress" not in all_rule_caps:
+            has_domains = f_rule.unless.domain_allowlist is not None
+            has_paths = f_rule.unless.path_allowlist is not None
+
+            if not has_domains and not has_paths:
                 errors.append(
                     {
                         "code": "ERR_INVALID_UNLESS",
                         "path": f"flow_rules[{i}].unless",
                         "message": (
-                            f"Flow rule '{f_rule.id}' specifies 'unless' exemption, but rule capabilities "
-                            f"{sorted(all_rule_caps)} do not include 'egress'"
+                            f"Flow rule '{f_rule.id}' unless must specify either domain_allowlist or path_allowlist"
                         ),
                     }
                 )
-            for d_idx, dom_pat in enumerate(domains or []):
-                try:
-                    compile_domain_pattern(dom_pat)
-                except Exception as exc:
+
+            all_rule_caps = set(f_rule.deny_capabilities or []) | set(
+                f_rule.require_approval_capabilities or []
+            )
+
+            if has_domains:
+                domains = f_rule.unless.domain_allowlist
+                if (
+                    not domains
+                    or not isinstance(domains, list)
+                    or not all(isinstance(d, str) and d.strip() for d in domains)
+                ):
                     errors.append(
                         {
-                            "code": "ERR_INVALID_DOMAIN_PATTERN",
-                            "path": f"flow_rules[{i}].unless.domain_allowlist[{d_idx}]",
-                            "message": f"Failed to compile domain pattern '{dom_pat}': {exc}",
+                            "code": "ERR_INVALID_UNLESS",
+                            "path": f"flow_rules[{i}].unless.domain_allowlist",
+                            "message": (
+                                f"Flow rule '{f_rule.id}' unless must specify a non-empty domain_allowlist list of strings"
+                            ),
                         }
                     )
+                if "egress" not in all_rule_caps:
+                    errors.append(
+                        {
+                            "code": "ERR_INVALID_UNLESS",
+                            "path": f"flow_rules[{i}].unless",
+                            "message": (
+                                f"Flow rule '{f_rule.id}' specifies 'unless' exemption, but rule capabilities "
+                                f"{sorted(all_rule_caps)} do not include 'egress'"
+                            ),
+                        }
+                    )
+                for d_idx, dom_pat in enumerate(domains or []):
+                    try:
+                        compile_domain_pattern(dom_pat)
+                    except Exception as exc:
+                        errors.append(
+                            {
+                                "code": "ERR_INVALID_DOMAIN_PATTERN",
+                                "path": f"flow_rules[{i}].unless.domain_allowlist[{d_idx}]",
+                                "message": f"Failed to compile domain pattern '{dom_pat}': {exc}",
+                            }
+                        )
+
+            if has_paths:
+                paths = f_rule.unless.path_allowlist
+                if (
+                    not paths
+                    or not isinstance(paths, list)
+                    or not all(isinstance(p, str) and p.strip() for p in paths)
+                ):
+                    errors.append(
+                        {
+                            "code": "ERR_INVALID_UNLESS_PATH",
+                            "path": f"flow_rules[{i}].unless.path_allowlist",
+                            "message": (
+                                f"Flow rule '{f_rule.id}' unless must specify a non-empty path_allowlist list of strings"
+                            ),
+                        }
+                    )
+                if "write" not in all_rule_caps:
+                    errors.append(
+                        {
+                            "code": "ERR_UNLESS_PATH_NON_WRITE",
+                            "path": f"flow_rules[{i}].unless",
+                            "message": (
+                                f"Flow rule '{f_rule.id}' specifies path_allowlist 'unless' exemption, but rule capabilities "
+                                f"{sorted(all_rule_caps)} do not include 'write'"
+                            ),
+                        }
+                    )
+                for p_idx, p_pat in enumerate(paths or []):
+                    try:
+                        if "\x00" in p_pat:
+                            raise ValueError("Path pattern contains NUL byte")
+                        compile_path_glob(p_pat)
+                    except Exception as exc:
+                        errors.append(
+                            {
+                                "code": "ERR_INVALID_PATH_PATTERN",
+                                "path": f"flow_rules[{i}].unless.path_allowlist[{p_idx}]",
+                                "message": f"Failed to compile path pattern '{p_pat}': {exc}",
+                            }
+                        )
 
     # 7. Rule 7 & 8: Tool capabilities and argument adapter constraints
     capabilities_map: dict[str, tuple[str, ...]] = {
@@ -495,17 +556,32 @@ def validate_and_compile_policy(
         unless_rules: list[tuple[str, bool, re.Pattern[str] | None]] = []
         exact_hosts: set[str] = set()
         wildcards: list[re.Pattern[str]] = []
-        if f_rule.unless and f_rule.unless.domain_allowlist:
-            for dom_pat in f_rule.unless.domain_allowlist:
-                try:
-                    raw_h, is_w, rx = compile_domain_pattern(dom_pat)
-                    unless_rules.append((raw_h, is_w, rx))
-                    if is_w and rx is not None:
-                        wildcards.append(rx)
-                    else:
-                        exact_hosts.add(raw_h)
-                except Exception:
-                    pass
+        path_patterns: list[re.Pattern[str]] = []
+        has_domain_unless = False
+        has_path_unless = False
+
+        if f_rule.unless is not None:
+            if f_rule.unless.domain_allowlist:
+                has_domain_unless = True
+                for dom_pat in f_rule.unless.domain_allowlist:
+                    try:
+                        raw_h, is_w, rx = compile_domain_pattern(dom_pat)
+                        unless_rules.append((raw_h, is_w, rx))
+                        if is_w and rx is not None:
+                            wildcards.append(rx)
+                        else:
+                            exact_hosts.add(raw_h)
+                    except Exception:
+                        pass
+            if f_rule.unless.path_allowlist:
+                has_path_unless = True
+                for p_pat in f_rule.unless.path_allowlist:
+                    try:
+                        rx_p = compile_path_glob(p_pat)
+                        path_patterns.append(rx_p)
+                    except Exception:
+                        pass
+
         compiled_flow_rules.append(
             CompiledFlowRule(
                 id=f_rule.id,
@@ -516,6 +592,9 @@ def validate_and_compile_policy(
                 unless_domain_rules=tuple(unless_rules),
                 unless_exact_hosts=frozenset(exact_hosts),
                 unless_wildcard_regexes=tuple(wildcards),
+                has_domain_unless=has_domain_unless,
+                has_path_unless=has_path_unless,
+                unless_path_patterns=tuple(path_patterns),
                 if_session_has_tuple=tuple(f_rule.if_session_has),
                 deny_caps_tuple=tuple(f_rule.deny_capabilities or ()),
                 appr_caps_tuple=tuple(f_rule.require_approval_capabilities or ()),

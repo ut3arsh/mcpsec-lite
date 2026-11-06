@@ -8,8 +8,16 @@ from __future__ import annotations
 
 from typing import Any
 
-from mcpsec_core.adapters import extract_domain_arguments
-from mcpsec_core.matching import normalize_domain_or_url
+from mcpsec_core.adapters import (
+    extract_domain_arguments,
+    extract_path_arguments,
+    get_adapter,
+)
+from mcpsec_core.matching import (
+    match_path,
+    normalize_domain_or_url,
+    normalize_path,
+)
 from mcpsec_core.models import Decision, SessionState, ToolCall
 
 
@@ -60,6 +68,10 @@ def check_flow(session_state: SessionState, call: ToolCall, policy: Any) -> Deci
     call_domains_valid: bool = False
     call_normalized_domains: list[tuple[str, bool]] = []
 
+    call_paths_extracted: bool = False
+    call_paths_valid: bool = False
+    call_normalized_paths: list[str] = []
+
     for rule in policy.compiled_flow_rules:
         # 1. Check if session has all required taint labels
         req_labels = rule.if_session_has_tuple
@@ -77,40 +89,66 @@ def check_flow(session_state: SessionState, call: ToolCall, policy: Any) -> Deci
 
         # 3. Check 'unless' exemption
         if rule.has_unless:
-            if not call_domains_extracted:
-                call_domains_extracted = True
-                is_valid, domain_args, _ = extract_domain_arguments(tool_id, call.args)
-                if is_valid and domain_args:
-                    parsed_list: list[tuple[str, bool]] = []
-                    parse_ok = True
-                    for raw_url in domain_args:
-                        try:
-                            norm_dom, is_ip = normalize_domain_or_url(raw_url)
-                            parsed_list.append((norm_dom, is_ip))
-                        except Exception:
-                            parse_ok = False
-                            break
-                    if parse_ok and parsed_list:
-                        call_domains_valid = True
-                        call_normalized_domains = parsed_list
+            # 3a. Domain allowlist exemption (valid for rules with egress)
+            if getattr(rule, "has_domain_unless", False) or getattr(rule, "unless_domain_rules", ()):
+                if not call_domains_extracted:
+                    call_domains_extracted = True
+                    is_valid, domain_args, _ = extract_domain_arguments(tool_id, call.args)
+                    if is_valid and domain_args:
+                        parsed_list: list[tuple[str, bool]] = []
+                        parse_ok = True
+                        for raw_url in domain_args:
+                            try:
+                                norm_dom, is_ip = normalize_domain_or_url(raw_url)
+                                parsed_list.append((norm_dom, is_ip))
+                            except Exception:
+                                parse_ok = False
+                                break
+                        if parse_ok and parsed_list:
+                            call_domains_valid = True
+                            call_normalized_domains = parsed_list
 
-            if not call_domains_valid:
-                # No domain adapter, missing args, or invalid arg type -> rule applies (fail closed)
-                pass
-            else:
-                all_domains_match = True
-                for nd, is_ip in call_normalized_domains:
-                    if nd in rule.unless_exact_hosts:
-                        continue
-                    if not is_ip and rule.unless_wildcard_regexes:
-                        if any(rx.match(nd) for rx in rule.unless_wildcard_regexes):
+                if call_domains_valid:
+                    all_domains_match = True
+                    for nd, is_ip in call_normalized_domains:
+                        if nd in rule.unless_exact_hosts:
                             continue
-                    all_domains_match = False
-                    break
+                        if not is_ip and rule.unless_wildcard_regexes:
+                            if any(rx.match(nd) for rx in rule.unless_wildcard_regexes):
+                                continue
+                        all_domains_match = False
+                        break
 
-                if all_domains_match:
-                    # Exemption applies: skip this rule
-                    continue
+                    if all_domains_match:
+                        # Exemption applies: skip this rule
+                        continue
+
+            # 3b. Path allowlist exemption (valid for rules with write)
+            if getattr(rule, "has_path_unless", False) or getattr(rule, "unless_path_patterns", ()):
+                if not call_paths_extracted:
+                    call_paths_extracted = True
+                    adapter = get_adapter(tool_id)
+                    if adapter is not None and adapter.path_args:
+                        is_valid, path_args, _ = extract_path_arguments(tool_id, call.args)
+                        if is_valid and path_args:
+                            parsed_paths: list[str] = []
+                            parse_ok = True
+                            for raw_p in path_args:
+                                try:
+                                    norm_p = normalize_path(raw_p)
+                                    parsed_paths.append(norm_p)
+                                except Exception:
+                                    parse_ok = False
+                                    break
+                            if parse_ok and parsed_paths:
+                                call_paths_valid = True
+                                call_normalized_paths = parsed_paths
+
+                if call_paths_valid:
+                    patterns = list(getattr(rule, "unless_path_patterns", ()))
+                    if patterns and all(match_path(np, patterns) for np in call_normalized_paths):
+                        # Exemption applies: skip this rule
+                        continue
 
         # 4. Rule applies
         if deny_match:

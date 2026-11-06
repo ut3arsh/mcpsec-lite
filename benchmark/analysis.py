@@ -218,7 +218,8 @@ def generate_analysis_report(
     approval_modes: list[str] = list(run_config.get("approval_modes", ["deny_all", "approve_all"]))
 
     # Attacks
-    all_attacks = attack_manifest.get("scenarios", [])
+    trial_ids = {r["id"] for r in trials}
+    all_attacks = [s for s in attack_manifest.get("scenarios", []) if s["id"] in trial_ids]
     valid_attacks = [s for s in all_attacks if s.get("status") != "invalid"]
     in_scope_attacks = [s for s in valid_attacks if s.get("classification") == "in-scope"]
     known_gap_attacks = [s for s in valid_attacks if s.get("classification") == "known-gap"]
