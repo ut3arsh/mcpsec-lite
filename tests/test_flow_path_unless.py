@@ -15,13 +15,14 @@ from __future__ import annotations
 
 import os
 from typing import Any
+
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from mcpsec_core.flow import check_flow
 from mcpsec_core.matching import normalize_path
-from mcpsec_core.models import Decision, SessionState, ToolCall
+from mcpsec_core.models import SessionState, ToolCall
 from mcpsec_core.policy import Policy, PolicyError, load_policy
 
 BASE_POLICY_YAML = """
@@ -100,7 +101,7 @@ def no_unless_policy() -> Policy:
 
 def test_flow_path_unless_match_exempts_rule(flow_path_policy: Policy) -> None:
     """A write inside sandbox/notes/** is exempted from approval under untrusted taint."""
-    session = SessionState(session_id="s1", taint=frozenset({"untrusted_content"}))
+    session = SessionState(session_id="s1", taint={"untrusted_content"})
     call = ToolCall(
         call_id="c1",
         session_id="s1",
@@ -117,7 +118,7 @@ def test_flow_path_unless_match_exempts_rule(flow_path_policy: Policy) -> None:
 
 def test_flow_path_unless_no_match_requires_approval(flow_path_policy: Policy) -> None:
     """A write outside sandbox/notes/** requires approval under untrusted taint."""
-    session = SessionState(session_id="s1", taint=frozenset({"untrusted_content"}))
+    session = SessionState(session_id="s1", taint={"untrusted_content"})
     call = ToolCall(
         call_id="c2",
         session_id="s1",
@@ -134,7 +135,7 @@ def test_flow_path_unless_no_match_requires_approval(flow_path_policy: Policy) -
 
 def test_flow_path_unless_parse_failure_fails_closed(flow_path_policy: Policy) -> None:
     """A path containing a NUL byte fails closed and is held for approval."""
-    session = SessionState(session_id="s1", taint=frozenset({"untrusted_content"}))
+    session = SessionState(session_id="s1", taint={"untrusted_content"})
     call = ToolCall(
         call_id="c3",
         session_id="s1",
@@ -151,7 +152,7 @@ def test_flow_path_unless_parse_failure_fails_closed(flow_path_policy: Policy) -
 
 def test_flow_path_unless_traversal_fails_closed(flow_path_policy: Policy) -> None:
     """Directory traversal escaping sandbox/notes/** fails closed and is held for approval."""
-    session = SessionState(session_id="s1", taint=frozenset({"untrusted_content"}))
+    session = SessionState(session_id="s1", taint={"untrusted_content"})
     call = ToolCall(
         call_id="c4",
         session_id="s1",
@@ -168,7 +169,7 @@ def test_flow_path_unless_traversal_fails_closed(flow_path_policy: Policy) -> No
 
 def test_flow_path_unless_unc_network_share_fails_closed(flow_path_policy: Policy) -> None:
     """UNC network paths fail normalization, failing closed to hold for approval."""
-    session = SessionState(session_id="s1", taint=frozenset({"untrusted_content"}))
+    session = SessionState(session_id="s1", taint={"untrusted_content"})
     call = ToolCall(
         call_id="c5",
         session_id="s1",
@@ -185,7 +186,7 @@ def test_flow_path_unless_unc_network_share_fails_closed(flow_path_policy: Polic
 
 def test_flow_path_unless_device_namespace_fails_closed(flow_path_policy: Policy) -> None:
     """Windows device namespace paths fail normalization, failing closed to hold for approval."""
-    session = SessionState(session_id="s1", taint=frozenset({"untrusted_content"}))
+    session = SessionState(session_id="s1", taint={"untrusted_content"})
     call = ToolCall(
         call_id="c6",
         session_id="s1",
@@ -204,7 +205,7 @@ def test_flow_path_unless_tool_without_path_adapter_fails_closed(
     flow_path_policy: Policy,
 ) -> None:
     """A tool with write capability but no path adapter cannot be exempted and fails closed."""
-    session = SessionState(session_id="s1", taint=frozenset({"untrusted_content"}))
+    session = SessionState(session_id="s1", taint={"untrusted_content"})
     call = ToolCall(
         call_id="c7",
         session_id="s1",
@@ -221,7 +222,7 @@ def test_flow_path_unless_tool_without_path_adapter_fails_closed(
 
 def test_flow_path_unless_missing_path_arg_fails_closed(flow_path_policy: Policy) -> None:
     """A write call with missing 'path' argument fails closed and requires approval."""
-    session = SessionState(session_id="s1", taint=frozenset({"untrusted_content"}))
+    session = SessionState(session_id="s1", taint={"untrusted_content"})
     call = ToolCall(
         call_id="c8",
         session_id="s1",
@@ -240,14 +241,14 @@ def test_flow_path_unless_non_string_path_arg_fails_closed(
     flow_path_policy: Policy,
 ) -> None:
     """A write call with non-string 'path' fails closed and requires approval."""
-    session = SessionState(session_id="s1", taint=frozenset({"untrusted_content"}))
+    session = SessionState(session_id="s1", taint={"untrusted_content"})
     call = ToolCall(
         call_id="c9",
         session_id="s1",
         agent_id="a1",
         server="fs",
         tool="write_file",
-        args={"path": 12345, "content": "invalid type"},  # type: ignore[dict-item]
+        args={"path": 12345, "content": "invalid type"},
         capabilities=["write"],
     )
     decision = check_flow(session, call, flow_path_policy)
@@ -259,7 +260,7 @@ def test_flow_path_unless_windows_case_insensitive(flow_path_policy: Policy) -> 
     """On Windows, case-insensitive match exempts UPPERCASE paths."""
     if os.name != "nt":
         pytest.skip("Windows case-insensitivity test applies to Windows only")
-    session = SessionState(session_id="s1", taint=frozenset({"untrusted_content"}))
+    session = SessionState(session_id="s1", taint={"untrusted_content"})
     call = ToolCall(
         call_id="c10",
         session_id="s1",
@@ -275,7 +276,7 @@ def test_flow_path_unless_windows_case_insensitive(flow_path_policy: Policy) -> 
 
 def test_flow_path_unless_multi_path_both_match(flow_path_policy: Policy) -> None:
     """fs.move_file where both source and destination are in allowlist is exempt."""
-    session = SessionState(session_id="s1", taint=frozenset({"untrusted_content"}))
+    session = SessionState(session_id="s1", taint={"untrusted_content"})
     call = ToolCall(
         call_id="c11",
         session_id="s1",
@@ -296,7 +297,7 @@ def test_flow_path_unless_multi_path_one_outside_fails_closed(
     flow_path_policy: Policy,
 ) -> None:
     """fs.move_file where destination is outside allowlist fails closed and requires approval."""
-    session = SessionState(session_id="s1", taint=frozenset({"untrusted_content"}))
+    session = SessionState(session_id="s1", taint={"untrusted_content"})
     call = ToolCall(
         call_id="c12",
         session_id="s1",
@@ -349,7 +350,7 @@ flow_rules:
       path_allowlist: ["{notes_glob}"]
 """
     pol, _, _ = load_policy(policy_yaml)
-    session = SessionState(session_id="s1", taint=frozenset({"untrusted_content"}))
+    session = SessionState(session_id="s1", taint={"untrusted_content"})
     call = ToolCall(
         call_id="c13",
         session_id="s1",
@@ -461,7 +462,9 @@ flow_rules:
     unless:
       path_allowlist: ["bad/pattern/**"]
 """
-    with patch("mcpsec_core.policy.compile_path_glob", side_effect=ValueError("bad pattern syntax")):
+    with patch(
+        "mcpsec_core.policy.compile_path_glob", side_effect=ValueError("bad pattern syntax")
+    ):
         with pytest.raises(PolicyError) as exc_info:
             load_policy(yaml_src)
     errors = exc_info.value.errors
@@ -512,7 +515,7 @@ def test_property_path_unless_monotonicity(
     If policy without exemption allows, policy with exemption MUST allow.
     If policy with exemption denies/approves, policy without exemption could not have allowed.
     """
-    taint = frozenset({"untrusted_content"}) if has_taint else frozenset()
+    taint = {"untrusted_content"} if has_taint else set()
     session = SessionState(session_id="s_prop", taint=taint)
     call = ToolCall(
         call_id="c_prop",

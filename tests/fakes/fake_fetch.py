@@ -46,7 +46,6 @@ CANNED_RESPONSES: dict[str, str] = {
 }
 
 
-
 def create_fake_fetch_server() -> Server:
     """Create an MCP server with the fetch tool."""
     server = Server("fake-fetch-server")

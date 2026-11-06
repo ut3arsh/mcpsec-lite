@@ -90,7 +90,9 @@ def check_flow(session_state: SessionState, call: ToolCall, policy: Any) -> Deci
         # 3. Check 'unless' exemption
         if rule.has_unless:
             # 3a. Domain allowlist exemption (valid for rules with egress)
-            if getattr(rule, "has_domain_unless", False) or getattr(rule, "unless_domain_rules", ()):
+            if getattr(rule, "has_domain_unless", False) or getattr(
+                rule, "unless_domain_rules", ()
+            ):
                 if not call_domains_extracted:
                     call_domains_extracted = True
                     is_valid, domain_args, _ = extract_domain_arguments(tool_id, call.args)
