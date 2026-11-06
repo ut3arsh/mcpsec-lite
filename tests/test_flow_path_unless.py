@@ -14,6 +14,7 @@ Validates:
 from __future__ import annotations
 
 import os
+import sys
 from typing import Any
 
 import pytest
@@ -258,7 +259,7 @@ def test_flow_path_unless_non_string_path_arg_fails_closed(
 
 def test_flow_path_unless_windows_case_insensitive(flow_path_policy: Policy) -> None:
     """On Windows, case-insensitive match exempts UPPERCASE paths."""
-    if os.name != "nt":
+    if sys.platform != "win32":
         pytest.skip("Windows case-insensitivity test applies to Windows only")
     session = SessionState(session_id="s1", taint={"untrusted_content"})
     call = ToolCall(
@@ -325,7 +326,7 @@ def test_flow_path_unless_symlink_escape_fails_closed(tmp_path: Any) -> None:
     target_outside.write_text("outside", encoding="utf-8")
 
     link_path = notes_dir / "link_to_src"
-    if os.name == "nt":
+    if sys.platform == "win32":
         import _winapi
 
         _winapi.CreateJunction(str(src_dir), str(link_path))
