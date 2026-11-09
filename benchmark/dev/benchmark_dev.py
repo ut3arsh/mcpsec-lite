@@ -1459,6 +1459,7 @@ async def run_dev_matrix(
             "E3": "Hybrid: Approval-based egress + curated unless exemption",
             "C5": "Freeze Candidate (E3 adopted: policy allowlists + session taint + approval egress + curated unless)",
             "E4": "Full Firewall with Scratch Notes Write Exemption (C5 + Path Unless)",
+            "E4b": "Full Firewall with Restored C5 and Scratch Notes Write Exemption (Path Unless)",
         }.get(c, c)
 
         md.append(

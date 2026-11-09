@@ -1,0 +1,95 @@
+﻿diff --git a/benchmark/configs/C5.yaml b/benchmark/configs/C5.yaml
+index ae9d215..8b2f06a 100644
+--- a/benchmark/configs/C5.yaml
++++ b/benchmark/configs/C5.yaml
+@@ -1,46 +1,29 @@
+-# C5: E3 + Audited Taint Sources (Complete U and P tool mappings)
++# C5: Freeze candidate (adopted from E3: approval-based untrusted egress + curated unless)
+ version: 1
+ mode: enforce
+ serialize_calls: true
+ 
+ capabilities:
+   fs.read_file:                [read]
+-  fs.read_text_file:           [read]
+-  fs.read_media_file:          [read]
+-  fs.read_multiple_files:      [read]
+   fs.write_file:               [write]
+   fs.list_directory:           [read]
+   filesystem.read_file:        [read]
+-  filesystem.read_text_file:   [read]
+-  filesystem.read_media_file:  [read]
+-  filesystem.read_multiple_files: [read]
+   filesystem.write_file:       [write]
+   filesystem.list_directory:   [read]
+   fetch.fetch:                 [network_read, egress]
+   http.fetch:                  [network_read, egress]
+   github.get_issue:            [network_read]
+-  github.get_pull_request:     [network_read]
+-  github.get_file_contents:    [network_read]
+   github.create_issue_comment: [write, egress]
+   github.list_issues:          [network_read]
+-  github.list_pull_requests:   [network_read]
+   github.search_repositories:  [network_read]
+-  github.search_code:          [network_read]
+-  github.search_issues:        [network_read]
+ 
+ policies:
+   - agent: "*"
+     tools:
+       fs.read_file:                { path_allowlist: ["sandbox", "sandbox/**", "**/sandbox", "**/sandbox/**"] }
+-      fs.read_text_file:           { path_allowlist: ["sandbox", "sandbox/**", "**/sandbox", "**/sandbox/**"] }
+-      fs.read_media_file:          { path_allowlist: ["sandbox", "sandbox/**", "**/sandbox", "**/sandbox/**"] }
+-      fs.read_multiple_files:      {}
+       fs.write_file:               { path_allowlist: ["sandbox", "sandbox/**", "**/sandbox", "**/sandbox/**"] }
+       fs.list_directory:           { path_allowlist: ["sandbox", "sandbox/**", "**/sandbox", "**/sandbox/**"] }
+       filesystem.read_file:        { path_allowlist: ["sandbox", "sandbox/**", "**/sandbox", "**/sandbox/**"] }
+-      filesystem.read_text_file:   { path_allowlist: ["sandbox", "sandbox/**", "**/sandbox", "**/sandbox/**"] }
+-      filesystem.read_media_file:  { path_allowlist: ["sandbox", "sandbox/**", "**/sandbox", "**/sandbox/**"] }
+-      filesystem.read_multiple_files: {}
+       filesystem.write_file:       { path_allowlist: ["sandbox", "sandbox/**", "**/sandbox", "**/sandbox/**"] }
+       filesystem.list_directory:   { path_allowlist: ["sandbox", "sandbox/**", "**/sandbox", "**/sandbox/**"] }
+       fetch.fetch:
+@@ -98,42 +81,19 @@ policies:
+           - "nvd.nist.gov"
+           - "*.s3.amazonaws.com"
+       github.get_issue:            {}
+-      github.get_pull_request:     {}
+-      github.get_file_contents:    {}
+       github.create_issue_comment: {}
+       github.list_issues:          {}
+-      github.list_pull_requests:   {}
+       github.search_repositories:  {}
+-      github.search_code:          {}
+-      github.search_issues:        {}
+ 
+ taint_sources:
+   private_data:
+     - tool: fs.read_file
+       args: { path: ["**/.env*", "**/id_rsa*", "**/*secret*", "**/*credential*", "**/database.yml*", "**/auth.json*", "**/customers.csv*", "**/signing_key*", "**/api_keys*"] }
+-    - tool: fs.read_text_file
+-      args: { path: ["**/.env*", "**/id_rsa*", "**/*secret*", "**/*credential*", "**/database.yml*", "**/auth.json*", "**/customers.csv*", "**/signing_key*", "**/api_keys*"] }
+-    - tool: fs.read_media_file
+-      args: { path: ["**/.env*", "**/id_rsa*", "**/*secret*", "**/*credential*", "**/database.yml*", "**/auth.json*", "**/customers.csv*", "**/signing_key*", "**/api_keys*"] }
+-    - tool: fs.read_multiple_files
+-      args: { path: ["**/.env*", "**/id_rsa*", "**/*secret*", "**/*credential*", "**/database.yml*", "**/auth.json*", "**/customers.csv*", "**/signing_key*", "**/api_keys*"] }
+     - tool: filesystem.read_file
+       args: { path: ["**/.env*", "**/id_rsa*", "**/*secret*", "**/*credential*", "**/database.yml*", "**/auth.json*", "**/customers.csv*", "**/signing_key*", "**/api_keys*"] }
+-    - tool: filesystem.read_text_file
+-      args: { path: ["**/.env*", "**/id_rsa*", "**/*secret*", "**/*credential*", "**/database.yml*", "**/auth.json*", "**/customers.csv*", "**/signing_key*", "**/api_keys*"] }
+-    - tool: filesystem.read_media_file
+-      args: { path: ["**/.env*", "**/id_rsa*", "**/*secret*", "**/*credential*", "**/database.yml*", "**/auth.json*", "**/customers.csv*", "**/signing_key*", "**/api_keys*"] }
+-    - tool: filesystem.read_multiple_files
+-      args: { path: ["**/.env*", "**/id_rsa*", "**/*secret*", "**/*credential*", "**/database.yml*", "**/auth.json*", "**/customers.csv*", "**/signing_key*", "**/api_keys*"] }
+   untrusted_content:
+     - tool: github.get_issue
+-    - tool: github.get_pull_request
+-    - tool: github.get_file_contents
+-    - tool: github.list_issues
+-    - tool: github.list_pull_requests
+     - tool: github.search_repositories
+-    - tool: github.search_code
+-    - tool: github.search_issues
+     - tool: fetch.fetch
+     - tool: http.fetch
+ 

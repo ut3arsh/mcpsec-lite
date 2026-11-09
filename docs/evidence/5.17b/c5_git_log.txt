@@ -1,0 +1,497 @@
+﻿commit 397af2fee1c2b57074abba257c1e0187f333bfdc
+Author: Utkarsh Anand <utkarshanand0506@gmail.com>
+Date:   Fri Nov 6 15:05:01 2026 +0530
+
+    feat(spec): add ADR-018, C5 adoption, E4 scratch-path config, and ATTACK-31 pre-registration
+
+diff --git a/benchmark/configs/C5.yaml b/benchmark/configs/C5.yaml
+index ae9d215..8b2f06a 100644
+--- a/benchmark/configs/C5.yaml
++++ b/benchmark/configs/C5.yaml
+@@ -1,46 +1,29 @@
+-# C5: E3 + Audited Taint Sources (Complete U and P tool mappings)
++# C5: Freeze candidate (adopted from E3: approval-based untrusted egress + curated unless)
+ version: 1
+ mode: enforce
+ serialize_calls: true
+ 
+ capabilities:
+   fs.read_file:                [read]
+-  fs.read_text_file:           [read]
+-  fs.read_media_file:          [read]
+-  fs.read_multiple_files:      [read]
+   fs.write_file:               [write]
+   fs.list_directory:           [read]
+   filesystem.read_file:        [read]
+-  filesystem.read_text_file:   [read]
+-  filesystem.read_media_file:  [read]
+-  filesystem.read_multiple_files: [read]
+   filesystem.write_file:       [write]
+   filesystem.list_directory:   [read]
+   fetch.fetch:                 [network_read, egress]
+   http.fetch:                  [network_read, egress]
+   github.get_issue:            [network_read]
+-  github.get_pull_request:     [network_read]
+-  github.get_file_contents:    [network_read]
+   github.create_issue_comment: [write, egress]
+   github.list_issues:          [network_read]
+-  github.list_pull_requests:   [network_read]
+   github.search_repositories:  [network_read]
+-  github.search_code:          [network_read]
+-  github.search_issues:        [network_read]
+ 
+ policies:
+   - agent: "*"
+     tools:
+       fs.read_file:                { path_allowlist: ["sandbox", "sandbox/**", "**/sandbox", "**/sandbox/**"] }
+-      fs.read_text_file:           { path_allowlist: ["sandbox", "sandbox/**", "**/sandbox", "**/sandbox/**"] }
+-      fs.read_media_file:          { path_allowlist: ["sandbox", "sandbox/**", "**/sandbox", "**/sandbox/**"] }
+-      fs.read_multiple_files:      {}
+       fs.write_file:               { path_allowlist: ["sandbox", "sandbox/**", "**/sandbox", "**/sandbox/**"] }
+       fs.list_directory:           { path_allowlist: ["sandbox", "sandbox/**", "**/sandbox", "**/sandbox/**"] }
+       filesystem.read_file:        { path_allowlist: ["sandbox", "sandbox/**", "**/sandbox", "**/sandbox/**"] }
+-      filesystem.read_text_file:   { path_allowlist: ["sandbox", "sandbox/**", "**/sandbox", "**/sandbox/**"] }
+-      filesystem.read_media_file:  { path_allowlist: ["sandbox", "sandbox/**", "**/sandbox", "**/sandbox/**"] }
+-      filesystem.read_multiple_files: {}
+       filesystem.write_file:       { path_allowlist: ["sandbox", "sandbox/**", "**/sandbox", "**/sandbox/**"] }
+       filesystem.list_directory:   { path_allowlist: ["sandbox", "sandbox/**", "**/sandbox", "**/sandbox/**"] }
+       fetch.fetch:
+@@ -98,42 +81,19 @@ policies:
+           - "nvd.nist.gov"
+           - "*.s3.amazonaws.com"
+       github.get_issue:            {}
+-      github.get_pull_request:     {}
+-      github.get_file_contents:    {}
+       github.create_issue_comment: {}
+       github.list_issues:          {}
+-      github.list_pull_requests:   {}
+       github.search_repositories:  {}
+-      github.search_code:          {}
+-      github.search_issues:        {}
+ 
+ taint_sources:
+   private_data:
+     - tool: fs.read_file
+       args: { path: ["**/.env*", "**/id_rsa*", "**/*secret*", "**/*credential*", "**/database.yml*", "**/auth.json*", "**/customers.csv*", "**/signing_key*", "**/api_keys*"] }
+-    - tool: fs.read_text_file
+-      args: { path: ["**/.env*", "**/id_rsa*", "**/*secret*", "**/*credential*", "**/database.yml*", "**/auth.json*", "**/customers.csv*", "**/signing_key*", "**/api_keys*"] }
+-    - tool: fs.read_media_file
+-      args: { path: ["**/.env*", "**/id_rsa*", "**/*secret*", "**/*credential*", "**/database.yml*", "**/auth.json*", "**/customers.csv*", "**/signing_key*", "**/api_keys*"] }
+-    - tool: fs.read_multiple_files
+-      args: { path: ["**/.env*", "**/id_rsa*", "**/*secret*", "**/*credential*", "**/database.yml*", "**/auth.json*", "**/customers.csv*", "**/signing_key*", "**/api_keys*"] }
+     - tool: filesystem.read_file
+       args: { path: ["**/.env*", "**/id_rsa*", "**/*secret*", "**/*credential*", "**/database.yml*", "**/auth.json*", "**/customers.csv*", "**/signing_key*", "**/api_keys*"] }
+-    - tool: filesystem.read_text_file
+-      args: { path: ["**/.env*", "**/id_rsa*", "**/*secret*", "**/*credential*", "**/database.yml*", "**/auth.json*", "**/customers.csv*", "**/signing_key*", "**/api_keys*"] }
+-    - tool: filesystem.read_media_file
+-      args: { path: ["**/.env*", "**/id_rsa*", "**/*secret*", "**/*credential*", "**/database.yml*", "**/auth.json*", "**/customers.csv*", "**/signing_key*", "**/api_keys*"] }
+-    - tool: filesystem.read_multiple_files
+-      args: { path: ["**/.env*", "**/id_rsa*", "**/*secret*", "**/*credential*", "**/database.yml*", "**/auth.json*", "**/customers.csv*", "**/signing_key*", "**/api_keys*"] }
+   untrusted_content:
+     - tool: github.get_issue
+-    - tool: github.get_pull_request
+-    - tool: github.get_file_contents
+-    - tool: github.list_issues
+-    - tool: github.list_pull_requests
+     - tool: github.search_repositories
+-    - tool: github.search_code
+-    - tool: github.search_issues
+     - tool: fetch.fetch
+     - tool: http.fetch
+ 
+
+commit b558d6567168b8bcdb7822b1a56fdab0bfe6d9a5
+Author: Utkarsh Anand <utkarshanand0506@gmail.com>
+Date:   Tue Nov 3 17:48:41 2026 +0530
+
+    feat(benchmark): audit tool fixture taint sources and author C5 config
+
+diff --git a/benchmark/configs/E3.yaml b/benchmark/configs/C5.yaml
+similarity index 64%
+copy from benchmark/configs/E3.yaml
+copy to benchmark/configs/C5.yaml
+index d445515..ae9d215 100644
+--- a/benchmark/configs/E3.yaml
++++ b/benchmark/configs/C5.yaml
+@@ -1,29 +1,46 @@
+-# E3: E1 + E2 (require_approval for untrusted egress + curated unless)
++# C5: E3 + Audited Taint Sources (Complete U and P tool mappings)
+ version: 1
+ mode: enforce
+ serialize_calls: true
+ 
+ capabilities:
+   fs.read_file:                [read]
++  fs.read_text_file:           [read]
++  fs.read_media_file:          [read]
++  fs.read_multiple_files:      [read]
+   fs.write_file:               [write]
+   fs.list_directory:           [read]
+   filesystem.read_file:        [read]
++  filesystem.read_text_file:   [read]
++  filesystem.read_media_file:  [read]
++  filesystem.read_multiple_files: [read]
+   filesystem.write_file:       [write]
+   filesystem.list_directory:   [read]
+   fetch.fetch:                 [network_read, egress]
+   http.fetch:                  [network_read, egress]
+   github.get_issue:            [network_read]
++  github.get_pull_request:     [network_read]
++  github.get_file_contents:    [network_read]
+   github.create_issue_comment: [write, egress]
+   github.list_issues:          [network_read]
++  github.list_pull_requests:   [network_read]
+   github.search_repositories:  [network_read]
++  github.search_code:          [network_read]
++  github.search_issues:        [network_read]
+ 
+ policies:
+   - agent: "*"
+     tools:
+       fs.read_file:                { path_allowlist: ["sandbox", "sandbox/**", "**/sandbox", "**/sandbox/**"] }
++      fs.read_text_file:           { path_allowlist: ["sandbox", "sandbox/**", "**/sandbox", "**/sandbox/**"] }
++      fs.read_media_file:          { path_allowlist: ["sandbox", "sandbox/**", "**/sandbox", "**/sandbox/**"] }
++      fs.read_multiple_files:      {}
+       fs.write_file:               { path_allowlist: ["sandbox", "sandbox/**", "**/sandbox", "**/sandbox/**"] }
+       fs.list_directory:           { path_allowlist: ["sandbox", "sandbox/**", "**/sandbox", "**/sandbox/**"] }
+       filesystem.read_file:        { path_allowlist: ["sandbox", "sandbox/**", "**/sandbox", "**/sandbox/**"] }
++      filesystem.read_text_file:   { path_allowlist: ["sandbox", "sandbox/**", "**/sandbox", "**/sandbox/**"] }
++      filesystem.read_media_file:  { path_allowlist: ["sandbox", "sandbox/**", "**/sandbox", "**/sandbox/**"] }
++      filesystem.read_multiple_files: {}
+       filesystem.write_file:       { path_allowlist: ["sandbox", "sandbox/**", "**/sandbox", "**/sandbox/**"] }
+       filesystem.list_directory:   { path_allowlist: ["sandbox", "sandbox/**", "**/sandbox", "**/sandbox/**"] }
+       fetch.fetch:
+@@ -81,19 +98,42 @@ policies:
+           - "nvd.nist.gov"
+           - "*.s3.amazonaws.com"
+       github.get_issue:            {}
++      github.get_pull_request:     {}
++      github.get_file_contents:    {}
+       github.create_issue_comment: {}
+       github.list_issues:          {}
++      github.list_pull_requests:   {}
+       github.search_repositories:  {}
++      github.search_code:          {}
++      github.search_issues:        {}
+ 
+ taint_sources:
+   private_data:
+     - tool: fs.read_file
+       args: { path: ["**/.env*", "**/id_rsa*", "**/*secret*", "**/*credential*", "**/database.yml*", "**/auth.json*", "**/customers.csv*", "**/signing_key*", "**/api_keys*"] }
++    - tool: fs.read_text_file
++      args: { path: ["**/.env*", "**/id_rsa*", "**/*secret*", "**/*credential*", "**/database.yml*", "**/auth.json*", "**/customers.csv*", "**/signing_key*", "**/api_keys*"] }
++    - tool: fs.read_media_file
++      args: { path: ["**/.env*", "**/id_rsa*", "**/*secret*", "**/*credential*", "**/database.yml*", "**/auth.json*", "**/customers.csv*", "**/signing_key*", "**/api_keys*"] }
++    - tool: fs.read_multiple_files
++      args: { path: ["**/.env*", "**/id_rsa*", "**/*secret*", "**/*credential*", "**/database.yml*", "**/auth.json*", "**/customers.csv*", "**/signing_key*", "**/api_keys*"] }
+     - tool: filesystem.read_file
+       args: { path: ["**/.env*", "**/id_rsa*", "**/*secret*", "**/*credential*", "**/database.yml*", "**/auth.json*", "**/customers.csv*", "**/signing_key*", "**/api_keys*"] }
++    - tool: filesystem.read_text_file
++      args: { path: ["**/.env*", "**/id_rsa*", "**/*secret*", "**/*credential*", "**/database.yml*", "**/auth.json*", "**/customers.csv*", "**/signing_key*", "**/api_keys*"] }
++    - tool: filesystem.read_media_file
++      args: { path: ["**/.env*", "**/id_rsa*", "**/*secret*", "**/*credential*", "**/database.yml*", "**/auth.json*", "**/customers.csv*", "**/signing_key*", "**/api_keys*"] }
++    - tool: filesystem.read_multiple_files
++      args: { path: ["**/.env*", "**/id_rsa*", "**/*secret*", "**/*credential*", "**/database.yml*", "**/auth.json*", "**/customers.csv*", "**/signing_key*", "**/api_keys*"] }
+   untrusted_content:
+     - tool: github.get_issue
++    - tool: github.get_pull_request
++    - tool: github.get_file_contents
++    - tool: github.list_issues
++    - tool: github.list_pull_requests
+     - tool: github.search_repositories
++    - tool: github.search_code
++    - tool: github.search_issues
+     - tool: fetch.fetch
+     - tool: http.fetch
+ 
+
+commit 59b9602a1777767a0d25d2e973bef636b07ca865
+Author: Utkarsh Anand <utkarshanand0506@gmail.com>
+Date:   Tue Nov 3 15:02:24 2026 +0530
+
+    feat(benchmark): add manifest_v3, ATTACK-28..30, *.s3 allowlist, and E0..E3 experiment configs
+
+diff --git a/benchmark/configs/C2.yaml b/benchmark/configs/E3.yaml
+similarity index 86%
+copy from benchmark/configs/C2.yaml
+copy to benchmark/configs/E3.yaml
+index a4563b3..d445515 100644
+--- a/benchmark/configs/C2.yaml
++++ b/benchmark/configs/E3.yaml
+@@ -1,4 +1,4 @@
+-# C2: Full Firewall (Policy + Flow Rules + Taint Tracking)
++# E3: E1 + E2 (require_approval for untrusted egress + curated unless)
+ version: 1
+ mode: enforce
+ serialize_calls: true
+@@ -52,6 +52,7 @@ policies:
+           - "github.com"
+           - "go.dev"
+           - "nvd.nist.gov"
++          - "*.s3.amazonaws.com"
+       http.fetch:
+         domain_allowlist:
+           - "docs.python.org"
+@@ -78,6 +79,7 @@ policies:
+           - "github.com"
+           - "go.dev"
+           - "nvd.nist.gov"
++          - "*.s3.amazonaws.com"
+       github.get_issue:            {}
+       github.create_issue_comment: {}
+       github.list_issues:          {}
+@@ -106,10 +108,19 @@ flow_rules:
+         - "pypi.org"
+         - "json-schema.org"
+         - "cve.mitre.org"
++        - "developer.mozilla.org"
++        - "www.rfc-editor.org"
++        - "go.dev"
++        - "kubernetes.io"
++        - "docs.aws.amazon.com"
++        - "docs.djangoproject.com"
++        - "nvd.nist.gov"
++        - "registry.npmjs.org"
++        - "crates.io"
+ 
+   - id: deny-untrusted-egress
+     if_session_has: [untrusted_content]
+-    deny_capabilities: [egress]
++    require_approval_capabilities: [egress]
+     unless:
+       domain_allowlist:
+         - "docs.python.org"
+@@ -117,6 +128,15 @@ flow_rules:
+         - "pypi.org"
+         - "json-schema.org"
+         - "cve.mitre.org"
++        - "developer.mozilla.org"
++        - "www.rfc-editor.org"
++        - "go.dev"
++        - "kubernetes.io"
++        - "docs.aws.amazon.com"
++        - "docs.djangoproject.com"
++        - "nvd.nist.gov"
++        - "registry.npmjs.org"
++        - "crates.io"
+ 
+   - id: appr-untrusted-write
+     if_session_has: [untrusted_content]
+
+commit 58edea21193378161ce7982930aa1f3bddb0e2d0
+Author: Utkarsh Anand <utkarshanand0506@gmail.com>
+Date:   Mon Nov 2 20:26:54 2026 +0530
+
+    feat(benchmark): add manifest_v2, ATTACK-25..27, and allowlist updates
+
+diff --git a/benchmark/configs/C2.yaml b/benchmark/configs/C2.yaml
+index 0ce2740..a4563b3 100644
+--- a/benchmark/configs/C2.yaml
++++ b/benchmark/configs/C2.yaml
+@@ -39,6 +39,19 @@ policies:
+           - "attacker.net"
+           - "search-leak.attacker.org"
+           - "attacker-c2.net"
++          - "developer.mozilla.org"
++          - "www.rfc-editor.org"
++          - "registry.npmjs.org"
++          - "stackoverflow.com"
++          - "requests.readthedocs.io"
++          - "crates.io"
++          - "docs.djangoproject.com"
++          - "docs.aws.amazon.com"
++          - "kubernetes.io"
++          - "raw.githubusercontent.com"
++          - "github.com"
++          - "go.dev"
++          - "nvd.nist.gov"
+       http.fetch:
+         domain_allowlist:
+           - "docs.python.org"
+@@ -52,6 +65,19 @@ policies:
+           - "attacker.net"
+           - "search-leak.attacker.org"
+           - "attacker-c2.net"
++          - "developer.mozilla.org"
++          - "www.rfc-editor.org"
++          - "registry.npmjs.org"
++          - "stackoverflow.com"
++          - "requests.readthedocs.io"
++          - "crates.io"
++          - "docs.djangoproject.com"
++          - "docs.aws.amazon.com"
++          - "kubernetes.io"
++          - "raw.githubusercontent.com"
++          - "github.com"
++          - "go.dev"
++          - "nvd.nist.gov"
+       github.get_issue:            {}
+       github.create_issue_comment: {}
+       github.list_issues:          {}
+
+commit 213a94106105674bea28ce005040a9712780a1fe
+Author: Utkarsh Anand <utkarshanand0506@gmail.com>
+Date:   Sun Oct 11 21:41:28 2026 +0530
+
+    fix(benchmark): align C1 policy allowlists with C2 and update dev manifest
+
+diff --git a/benchmark/configs/C2.yaml b/benchmark/configs/C2.yaml
+index 2f4b3d8..0ce2740 100644
+--- a/benchmark/configs/C2.yaml
++++ b/benchmark/configs/C2.yaml
+@@ -26,8 +26,32 @@ policies:
+       filesystem.read_file:        { path_allowlist: ["sandbox", "sandbox/**", "**/sandbox", "**/sandbox/**"] }
+       filesystem.write_file:       { path_allowlist: ["sandbox", "sandbox/**", "**/sandbox", "**/sandbox/**"] }
+       filesystem.list_directory:   { path_allowlist: ["sandbox", "sandbox/**", "**/sandbox", "**/sandbox/**"] }
+-      fetch.fetch:                 {}
+-      http.fetch:                  {}
++      fetch.fetch:
++        domain_allowlist:
++          - "docs.python.org"
++          - "api.github.com"
++          - "pypi.org"
++          - "json-schema.org"
++          - "cve.mitre.org"
++          - "attacker.com"
++          - "webhook.site"
++          - "analytics-collector.io"
++          - "attacker.net"
++          - "search-leak.attacker.org"
++          - "attacker-c2.net"
++      http.fetch:
++        domain_allowlist:
++          - "docs.python.org"
++          - "api.github.com"
++          - "pypi.org"
++          - "json-schema.org"
++          - "cve.mitre.org"
++          - "attacker.com"
++          - "webhook.site"
++          - "analytics-collector.io"
++          - "attacker.net"
++          - "search-leak.attacker.org"
++          - "attacker-c2.net"
+       github.get_issue:            {}
+       github.create_issue_comment: {}
+       github.list_issues:          {}
+
+commit cc8dc4242989afa4d68b578973cdd7a33c36b030
+Author: Utkarsh Anand <utkarshanand0506@gmail.com>
+Date:   Sat Oct 10 23:56:02 2026 +0530
+
+    fix(policy): add root directory to benchmark path allowlists and document glob semantics
+
+diff --git a/benchmark/configs/C2.yaml b/benchmark/configs/C2.yaml
+index 1ade7b8..2f4b3d8 100644
+--- a/benchmark/configs/C2.yaml
++++ b/benchmark/configs/C2.yaml
+@@ -20,12 +20,12 @@ capabilities:
+ policies:
+   - agent: "*"
+     tools:
+-      fs.read_file:                { path_allowlist: ["sandbox/**", "**/sandbox/**"] }
+-      fs.write_file:               { path_allowlist: ["sandbox/**", "**/sandbox/**"] }
+-      fs.list_directory:           { path_allowlist: ["sandbox/**", "**/sandbox/**"] }
+-      filesystem.read_file:        { path_allowlist: ["sandbox/**", "**/sandbox/**"] }
+-      filesystem.write_file:       { path_allowlist: ["sandbox/**", "**/sandbox/**"] }
+-      filesystem.list_directory:   { path_allowlist: ["sandbox/**", "**/sandbox/**"] }
++      fs.read_file:                { path_allowlist: ["sandbox", "sandbox/**", "**/sandbox", "**/sandbox/**"] }
++      fs.write_file:               { path_allowlist: ["sandbox", "sandbox/**", "**/sandbox", "**/sandbox/**"] }
++      fs.list_directory:           { path_allowlist: ["sandbox", "sandbox/**", "**/sandbox", "**/sandbox/**"] }
++      filesystem.read_file:        { path_allowlist: ["sandbox", "sandbox/**", "**/sandbox", "**/sandbox/**"] }
++      filesystem.write_file:       { path_allowlist: ["sandbox", "sandbox/**", "**/sandbox", "**/sandbox/**"] }
++      filesystem.list_directory:   { path_allowlist: ["sandbox", "sandbox/**", "**/sandbox", "**/sandbox/**"] }
+       fetch.fetch:                 {}
+       http.fetch:                  {}
+       github.get_issue:            {}
+
+commit d7159265621d92d0247aa891e343d19f96200b4e
+Author: Utkarsh Anand <utkarshanand0506@gmail.com>
+Date:   Sat Oct 10 20:04:27 2026 +0530
+
+    feat(benchmark): expand red-team development suite and implement statistical benchmark runner
+
+diff --git a/benchmark/configs/C2.yaml b/benchmark/configs/C2.yaml
+new file mode 100644
+index 0000000..1ade7b8
+--- /dev/null
++++ b/benchmark/configs/C2.yaml
+@@ -0,0 +1,78 @@
++# C2: Full Firewall (Policy + Flow Rules + Taint Tracking)
++version: 1
++mode: enforce
++serialize_calls: true
++
++capabilities:
++  fs.read_file:                [read]
++  fs.write_file:               [write]
++  fs.list_directory:           [read]
++  filesystem.read_file:        [read]
++  filesystem.write_file:       [write]
++  filesystem.list_directory:   [read]
++  fetch.fetch:                 [network_read, egress]
++  http.fetch:                  [network_read, egress]
++  github.get_issue:            [network_read]
++  github.create_issue_comment: [write, egress]
++  github.list_issues:          [network_read]
++  github.search_repositories:  [network_read]
++
++policies:
++  - agent: "*"
++    tools:
++      fs.read_file:                { path_allowlist: ["sandbox/**", "**/sandbox/**"] }
++      fs.write_file:               { path_allowlist: ["sandbox/**", "**/sandbox/**"] }
++      fs.list_directory:           { path_allowlist: ["sandbox/**", "**/sandbox/**"] }
++      filesystem.read_file:        { path_allowlist: ["sandbox/**", "**/sandbox/**"] }
++      filesystem.write_file:       { path_allowlist: ["sandbox/**", "**/sandbox/**"] }
++      filesystem.list_directory:   { path_allowlist: ["sandbox/**", "**/sandbox/**"] }
++      fetch.fetch:                 {}
++      http.fetch:                  {}
++      github.get_issue:            {}
++      github.create_issue_comment: {}
++      github.list_issues:          {}
++      github.search_repositories:  {}
++
++taint_sources:
++  private_data:
++    - tool: fs.read_file
++      args: { path: ["**/.env*", "**/id_rsa*", "**/*secret*", "**/*credential*", "**/database.yml*", "**/auth.json*", "**/customers.csv*", "**/signing_key*", "**/api_keys*"] }
++    - tool: filesystem.read_file
++      args: { path: ["**/.env*", "**/id_rsa*", "**/*secret*", "**/*credential*", "**/database.yml*", "**/auth.json*", "**/customers.csv*", "**/signing_key*", "**/api_keys*"] }
++  untrusted_content:
++    - tool: github.get_issue
++    - tool: github.search_repositories
++    - tool: fetch.fetch
++    - tool: http.fetch
++
++flow_rules:
++  - id: deny-private-egress
++    if_session_has: [private_data]
++    deny_capabilities: [egress]
++    unless:
++      domain_allowlist:
++        - "docs.python.org"
++        - "api.github.com"
++        - "pypi.org"
++        - "json-schema.org"
++        - "cve.mitre.org"
++
++  - id: deny-untrusted-egress
++    if_session_has: [untrusted_content]
++    deny_capabilities: [egress]
++    unless:
++      domain_allowlist:
++        - "docs.python.org"
++        - "api.github.com"
++        - "pypi.org"
++        - "json-schema.org"
++        - "cve.mitre.org"
++
++  - id: appr-untrusted-write
++    if_session_has: [untrusted_content]
++    require_approval_capabilities: [write]
++
++approval:
++  channel: cli
++  timeout_seconds: 1
++  allow_clear: [untrusted_content]
