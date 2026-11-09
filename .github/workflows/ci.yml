@@ -126,11 +126,23 @@ jobs:
 
       - name: Combine Coverage & Generate Report
         run: |
-          coverage combine core_coverage_*.cov
+          python -c "
+          import glob, sys
+          cov_files = sorted(glob.glob('core_coverage_*.cov'))
+          print(f'Found {len(cov_files)} raw coverage files:')
+          for f in cov_files:
+              print(f'  - {f}')
+          has_win = any('windows' in f for f in cov_files)
+          has_ubuntu = any('ubuntu' in f for f in cov_files)
+          if not has_win or not has_ubuntu:
+              sys.exit(f'Combine assertion error: Missing OS in coverage files! Windows: {has_win}, Ubuntu: {has_ubuntu}')
+          print(f'Assertion passed: both Windows ({has_win}) and Ubuntu ({has_ubuntu}) raw coverage files present.')
+          "
+          coverage combine --debug=dataio core_coverage_*.cov
           coverage json --include="mcpsec_core/*" -o coverage_core_combined.json
 
       - name: Enforce Combined Coverage Gate (>= 90.00% stmts & branches)
-        run: python scripts/check_coverage.py coverage_core_combined.json
+        run: python scripts/check_coverage.py coverage_core_combined.json --require-both-os
 
       - name: Upload Combined Gate Summary
         if: always()

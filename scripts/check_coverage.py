@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 
-def check_coverage_gate(json_path: Path) -> int:
+def check_coverage_gate(json_path: Path, require_both_os: bool = False) -> int:
     if isinstance(sys.stdout, io.TextIOWrapper) and sys.stdout.encoding:
         if sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
             try:
@@ -82,6 +82,25 @@ def check_coverage_gate(json_path: Path) -> int:
     missing_core = REQUIRED_CORE_STEMS - checked_stems
     if missing_core:
         floor_failures.append(f"Missing core modules in coverage report: {sorted(missing_core)}")
+
+    if require_both_os or "combined" in json_path.name.lower():
+        approvals_file = next(
+            (
+                v
+                for k, v in files_data.items()
+                if k.replace("\\", "/").endswith("mcpsec_core/approvals.py")
+            ),
+            None,
+        )
+        if approvals_file:
+            exec_lines = set(approvals_file.get("executed_lines", []))
+            has_win = any(line_num in exec_lines for line_num in (43, 53, 54, 70))
+            has_posix = any(line_num in exec_lines for line_num in (81, 91, 105))
+            if not has_win or not has_posix:
+                floor_failures.append(
+                    f"Combined coverage missing OS representation in approvals.py "
+                    f"(Windows={has_win}, POSIX={has_posix})"
+                )
 
     # Markdown summary output
     lines: list[str] = [
@@ -164,10 +183,18 @@ def check_coverage_gate(json_path: Path) -> int:
 def main(argv: list[str] | None = None) -> int:
     """Entry point."""
     args = argv if argv is not None else sys.argv[1:]
-    target = Path(args[0]) if args else Path("coverage_core_combined.json")
+    require_both_os = False
+    clean_args: list[str] = []
+    for arg in args:
+        if arg == "--require-both-os":
+            require_both_os = True
+        else:
+            clean_args.append(arg)
+
+    target = Path(clean_args[0]) if clean_args else Path("coverage_core_combined.json")
     if not target.exists() and Path("coverage_core.json").exists():
         target = Path("coverage_core.json")
-    return check_coverage_gate(target)
+    return check_coverage_gate(target, require_both_os=require_both_os)
 
 
 if __name__ == "__main__":
