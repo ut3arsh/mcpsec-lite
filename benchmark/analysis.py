@@ -650,8 +650,9 @@ def generate_analysis_report(
                 divider_row,
             ]
         )
+        att_meta_map = {s["id"]: s for s in all_attacks}
         for t_id in tracked_ids:
-            sc = sc_meta_map.get(t_id, {})
+            sc = att_meta_map.get(t_id, {})
             name = sc.get("name", t_id)
             classification = sc.get("classification", "in-scope").upper()
             realism = sc.get("realism", "realistic")

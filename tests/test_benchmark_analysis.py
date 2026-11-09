@@ -480,3 +480,59 @@ def test_chunk_5_17b_e4b_byte_for_byte_reproducibility() -> None:
     assert actual_bytes == expected_bytes, (
         "Regenerating Chunk 5.17b E4b analysis report failed byte-for-byte check"
     )
+
+
+def test_chunk_5_17c_byte_for_byte_reproducibility() -> None:
+    from benchmark.analysis import (
+        generate_analysis_report,
+        load_run_config,
+    )
+    from benchmark.analysis import (
+        load_manifest as load_manifest_v2,
+    )
+    from benchmark.analysis import (
+        load_trials as load_trials_v2,
+    )
+
+    trials_path = Path("benchmark/results/dev_20261109_e5/trials.csv")
+    run_json_path = Path("benchmark/results/dev_20261109_e5/run.json")
+    report_path = Path("benchmark/results/dev_analysis_20261109_e5.md")
+
+    if not trials_path.exists() or not report_path.exists() or not run_json_path.exists():
+        pytest.skip("Benchmark result files not present")
+
+    trials = load_trials_v2(trials_path)
+    run_config = load_run_config(run_json_path, trials_path)
+    attack_manifest = load_manifest_v2(Path("benchmark/attacks/dev/manifest.json"))
+    benign_manifests = [
+        load_manifest_v2(Path("benchmark/benign/manifest.json")),
+        load_manifest_v2(Path("benchmark/benign/manifest_v2.json")),
+        load_manifest_v2(Path("benchmark/benign/manifest_v3.json")),
+        load_manifest_v2(Path("benchmark/benign/manifest_v4.json")),
+    ]
+
+    # First regeneration
+    run1 = generate_analysis_report(
+        trials=trials,
+        run_config=run_config,
+        attack_manifest=attack_manifest,
+        benign_manifests=benign_manifests,
+    )
+    # Second regeneration
+    run2 = generate_analysis_report(
+        trials=trials,
+        run_config=run_config,
+        attack_manifest=attack_manifest,
+        benign_manifests=benign_manifests,
+    )
+
+    # Pure function determinism
+    assert run1 == run2
+
+    # Byte-for-byte identity against committed / generated file
+    expected_bytes = report_path.read_bytes().replace(b"\r\n", b"\n")
+    actual_bytes = run1.encode("utf-8")
+
+    assert actual_bytes == expected_bytes, (
+        "Regenerating Chunk 5.17c E5 analysis report failed byte-for-byte check"
+    )
