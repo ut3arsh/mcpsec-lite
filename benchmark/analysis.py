@@ -100,6 +100,7 @@ def load_run_config(run_json_path: Path | None, trials_path: Path) -> dict[str, 
             "benchmark/benign/manifest.json",
             "benchmark/benign/manifest_v2.json",
             "benchmark/benign/manifest_v3.json",
+            "benchmark/benign/manifest_v4.json",
         ],
         "selection_bars": {
             "max_hard_block_rate": 5.0,
@@ -634,6 +635,31 @@ def generate_analysis_report(
             f"| **{c}** | {k_d}/{n} | {k_d / n * 100:.1f}% | [{ci_d_l * 100:.1f}%, {ci_d_h * 100:.1f}%] | {k_a}/{n} | {k_a / n * 100:.1f}% | [{ci_a_l * 100:.1f}%, {ci_a_h * 100:.1f}%] |"
         )
 
+    cfg_att_headers = " | ".join(f"{c} (`deny`/`appr`)" for c in configs)
+    tracked_ids = [
+        sc_id for sc_id in ("ATTACK-31", "ATTACK-32", "ATTACK-33") if sc_id in valid_attack_ids
+    ]
+    if len(tracked_ids) >= 3:
+        divider_row = "|" + "---|" * (4 + len(configs))
+        lines.extend(
+            [
+                "",
+                "### Outcomes of Persistence and Dependency Attacks (ATTACK-31, ATTACK-32, ATTACK-33)",
+                "",
+                f"| ID | Attack Name | Classification | Realism | {cfg_att_headers} |",
+                divider_row,
+            ]
+        )
+        for t_id in tracked_ids:
+            sc = sc_meta_map.get(t_id, {})
+            name = sc.get("name", t_id)
+            classification = sc.get("classification", "in-scope").upper()
+            realism = sc.get("realism", "realistic")
+            status_cols = " | ".join(_format_attack_status(trial_map, t_id, c) for c in configs)
+            lines.append(
+                f"| `{t_id}` | {name} | **{classification}** | `{realism}` | {status_cols} |"
+            )
+
     # Configuration Pareto Evaluation
     lines.extend(
         [
@@ -699,11 +725,16 @@ def generate_analysis_report(
         )
 
     # Flow Rule Conflict Matrix (Targeting latest or primary configuration)
-    target_config = configs[-1] if configs else "E3"
-    if "C5" in configs:
-        target_config = "C5"
-    elif "E3" in configs:
-        target_config = "E3"
+    target_config = run_config.get("target_config") or run_config.get("conflict_matrix_config")
+    if not target_config:
+        if "E5" in configs:
+            target_config = "E5"
+        elif "C5" in configs:
+            target_config = "C5"
+        elif "E3" in configs:
+            target_config = "E3"
+        else:
+            target_config = configs[-1] if configs else "E3"
 
     lines.extend(
         [
@@ -899,6 +930,7 @@ def main(argv: list[str] | None = None) -> int:
                     "benchmark/benign/manifest.json",
                     "benchmark/benign/manifest_v2.json",
                     "benchmark/benign/manifest_v3.json",
+                    "benchmark/benign/manifest_v4.json",
                 ],
             )
         ]

@@ -93,3 +93,22 @@ Comparing the audit classification against `C2` / `E3` reveals the following cri
 To remediate these gaps, `benchmark/configs/C5.yaml` is defined as `E3` extended with the complete set of audited `taint_sources`:
 - All 8 `github.*` read tools and `fetch` tools labeled under `untrusted_content`.
 - All `filesystem.*` and `fs.*` read tools (`read_file`, `read_text_file`, `read_media_file`, `read_multiple_files`) mapped under `private_data` with standard private path patterns.
+
+---
+
+## 5. File-Origin Taint Specification (Chunk 5.17c Experiment)
+
+### The File-Origin Rule
+A file is classified as **`U` (Untrusted Content)** upon read if either of the following conditions holds:
+1. **Third-Party Dependency Directories:** It lives in a directory the project did not author (`**/node_modules/**`, `**/vendor/**`, `**/.venv/**`, `**/site-packages/**`, `**/downloads/**`). Third-party package archives and dependencies may contain prompt injection attacks, malicious documentation, or untrusted code comments.
+2. **Agent Scratch Output Directories:** It lives in a directory the agent itself writes scratch output to (`sandbox/notes/**`), since agent-written text may carry injected content or persistent attacker instructions originating from earlier sessions.
+
+### Application in Configuration `E5.yaml`
+In `E5.yaml`, filesystem read tools (`fs.read_file`, `fs.read_text_file`, `fs.read_multiple_files`, `filesystem.read_file`, `filesystem.read_text_file`, `filesystem.read_multiple_files`) are registered as `untrusted_content` taint sources when reading paths matching:
+- `**/node_modules/**`
+- `**/vendor/**`
+- `**/.venv/**`
+- `**/site-packages/**`
+- `**/downloads/**`
+- `sandbox/notes/**`
+- `**/sandbox/notes/**`
