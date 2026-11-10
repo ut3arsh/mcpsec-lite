@@ -1506,6 +1506,7 @@ async def run_dev_matrix(
             "E4": "Full Firewall with Scratch Notes Write Exemption (C5 + Path Unless)",
             "E4b": "Full Firewall with Restored C5 and Scratch Notes Write Exemption (Path Unless)",
             "E5": "Full Firewall with Restored C5, Scratch Notes Write Exemption, and File-Origin Taint",
+            "C6": "Frozen Default Profile (E5 + Strict Tool-Description Pinning)",
         }.get(c, c)
 
         md.append(

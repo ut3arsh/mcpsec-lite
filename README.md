@@ -160,6 +160,16 @@ python benchmark/measure_overhead.py
 - **Fail-Closed Default:** Any unrecognized tool call, invalid argument format, or parsing error is rejected with default-deny semantics.
 - **Protocol Surface (v1):** The proxy advertises and supports only the MCP `tools` capability (`listChanged=True`). Non-tool surfaces (`prompts`, `resources`) and server-initiated requests (`sampling/createMessage`, `elicitation`, `roots/list`) are rejected and audited as `ERR_UNSUPPORTED_SURFACE`.
 - **Generic Agent Errors:** In `enforce` mode, policy denials return generic messages to prevent information leakage to confusable models.
+- **Deployment Operating Modes (ADR-018, ADR-019):**
+  - **Unattended Mode (`deny_all`):** Automated execution without human operator presence. Pending approval requests time out and fail closed to denial. Security guarantee: 0% in-scope attack success rate (ASR = 0/21, 0.0% [0.0%, 15.5%]). Benign workflow unattended completion is determined by whether the task strictly avoids unapproved writes or egress outside exempt scratch paths and curated domains.
+  - **Attended Mode (`approve_all`):** Operator online to review pending approvals. Evaluated under `approve_all` as the catastrophic upper bound of operator approval fatigue (rubber-stamping all prompts), where in-scope ASR is 9/21 (42.9% [24.5%, 63.4%]).
+- **Empirical Default Profile C6 Tradeoffs (per-set figures from generated benchmark report):**
+  - **v1 manifest (n=32):** Approvals / task = 0.28 (9/32), Unattended (`deny_all`) completion = 23/32 (71.9% [54.6%, 84.4%]), Attended (`approve_all`) completion = 32/32 (100.0% [89.3%, 100.0%]).
+  - **v2 manifest (n=12):** Approvals / task = 0.75 (9/12), Unattended (`deny_all`) completion = 5/12 (41.7% [19.3%, 68.0%]), Attended (`approve_all`) completion = 12/12 (100.0% [75.8%, 100.0%]).
+  - **v3 manifest (n=2):** Approvals / task = 0.50 (1/2), Unattended (`deny_all`) completion = 1/2 (50.0% [9.4%, 90.5%]), Attended (`approve_all`) completion = 2/2 (100.0% [34.2%, 100.0%]).
+  - **v4 manifest (n=4):** Approvals / task = 0.25 (1/4), Unattended (`deny_all`) completion = 3/4 (75.0% [30.1%, 95.4%]), Attended (`approve_all`) completion = 4/4 (100.0% [51.0%, 100.0%]).
+  - **Combined (n=50):** Approvals / task = 0.40 (20/50), Unattended (`deny_all`) completion = 32/50 (64.0% [50.1%, 75.9%]), Attended (`approve_all`) completion = 50/50 (100.0% [92.9%, 100.0%]).
+
 
 Report vulnerabilities in this project privately (contact and `SECURITY.md` to be added before the first release).
 

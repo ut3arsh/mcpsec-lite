@@ -326,6 +326,74 @@ def generate_analysis_report(
             f"| **{c}** | {a_str} | {b_str} | {c_str} | {d_str} | {bars_passed}/{total_bars_count} | {status} |"
         )
 
+    if run_config.get("include_c6_outcomes", False):
+        benign_set_dict = {name: [sc["id"] for sc in sc_list] for name, sc_list in benign_sets}
+        lines.extend(
+            [
+                "",
+                "### Bar (d) Approvals / Task Breakdown Per Benign Set (Target $\\le 1.0$)",
+                "",
+                f"Evaluated across benign manifest sets v1 (n={len(benign_set_dict.get('v1', []))}), v2 (n={len(benign_set_dict.get('v2', []))}), v3 (n={len(benign_set_dict.get('v3', []))}), v4 (n={len(benign_set_dict.get('v4', []))}), and combined (n={len(combined_ids)}):",
+                "",
+                "| Configuration | v1 | v2 | v3 | v4 | Combined | All Sets $\\le 1.0$ |",
+                "|---|---|---|---|---|---|---|",
+            ]
+        )
+        for c in configs:
+            means: list[str] = []
+            all_pass = True
+            for s_name in ["v1", "v2", "v3", "v4"]:
+                s_ids = benign_set_dict.get(s_name, [])
+                n_s = len(s_ids)
+                s_appr = [trial_map.get((b_id, c, "approve_all"), {}) for b_id in s_ids]
+                s_tot = sum(int(r.get("approvals_count", 0)) for r in s_appr)
+                s_mean = (s_tot / n_s) if n_s > 0 else 0.0
+                if s_mean > bar_max_appr:
+                    all_pass = False
+                means.append(f"{s_mean:.2f} ({s_tot}/{n_s})")
+            tot_c = sum(
+                int(r.get("approvals_count", 0))
+                for r in [trial_map.get((b_id, c, "approve_all"), {}) for b_id in combined_ids]
+            )
+            mean_c = (tot_c / len(combined_ids)) if combined_ids else 0.0
+            if mean_c > bar_max_appr:
+                all_pass = False
+            comb_str = f"{mean_c:.2f} ({tot_c}/{len(combined_ids)})"
+            pass_str = "**PASS (ALL $\\le 1.0$)**" if all_pass else "**FAIL**"
+            lines.append(
+                f"| **{c}** | {means[0]} | {means[1]} | {means[2]} | {means[3]} | {comb_str} | {pass_str} |"
+            )
+
+        lines.extend(
+            [
+                "",
+                "### Bar (e) Attended In-Scope ASR (`approve_all` Worst-Case)",
+                "",
+                f"Evaluated across all {len(in_scope_ids)} in-scope attacks under `approve_all` (representing total operator approval fatigue):",
+                "",
+                "| Configuration | In-Scope ASR (`approve_all`) (k/n) | In-Scope ASR (%) | 95% Wilson CI (`approve_all`) | Attended Risk Assessment |",
+                "|---|---|---|---|---|",
+            ]
+        )
+        for c in configs:
+            k_ia = sum(
+                1
+                for a_id in in_scope_ids
+                if trial_map.get((a_id, c, "approve_all"), {}).get("status") == "succeeded"
+            )
+            rate_ia = (k_ia / len(in_scope_ids) * 100.0) if in_scope_ids else 0.0
+            ci_ia_l, ci_ia_h = wilson_interval(k_ia, len(in_scope_ids))
+            risk_desc = (
+                "Complete exposure (no boundary)"
+                if rate_ia >= 90.0
+                else "Elevated exposure under operator fatigue"
+                if rate_ia >= 40.0
+                else "Moderate exposure under operator fatigue"
+            )
+            lines.append(
+                f"| **{c}** | {k_ia}/{len(in_scope_ids)} | {rate_ia:.1f}% | [{ci_ia_l * 100:.1f}%, {ci_ia_h * 100:.1f}%] | {risk_desc} |"
+            )
+
     lines.extend(
         [
             "",
@@ -805,6 +873,132 @@ def generate_analysis_report(
         lines.append(
             f"| `{r_id}` | {att_str} ({len(att_stopped)}) | {hb_str} ({len(ben_hb)}) | {held_str} ({len(ben_held)}) | {disc_eval} |"
         )
+
+    if run_config.get("include_c6_outcomes", False):
+        cfg_att_headers = " | ".join(f"{c} (`deny`/`appr`)" for c in configs)
+        non_in_scope_attacks = [
+            s for s in valid_attacks if s.get("classification") in ("known-gap", "out-of-scope")
+        ]
+        lim_sep = "|---|---|---|---|" + ("---|" * len(configs)) + "---|"
+        lines.extend(
+            [
+                "",
+                "---",
+                "",
+                f"## {sec_idx}. Known Limitations Breakdown (Known-Gap and Out-of-Scope Attacks)",
+                "",
+                f"Evaluated across all {len(non_in_scope_attacks)} known-gap and out-of-scope attacks from manifest data (zero in-scope attacks are present here):",
+                "",
+                f"| ID | Attack Name | Classification | Realism | {cfg_att_headers} | Known Gap / Blind Spot Mechanism |",
+                lim_sep,
+            ]
+        )
+        sec_idx += 1
+        for sc in non_in_scope_attacks:
+            sc_id = sc["id"]
+            name = sc.get("name", sc_id)
+            classification = sc.get("classification", "").upper()
+            realism = sc.get("realism", "realistic")
+            lim_statuses: list[str] = [_format_attack_status(trial_map, sc_id, c) for c in configs]
+            status_cols = " | ".join(lim_statuses)
+            mech = (
+                sc.get("spec_rationale")
+                or sc.get("defense_beating_mechanism")
+                or sc.get("description")
+                or "Documented architectural limitation"
+            )
+            lines.append(
+                f"| `{sc_id}` | {name} | **{classification}** | `{realism}` | {status_cols} | {mech} |"
+            )
+
+        succeed_deny = [
+            sc
+            for sc in valid_attacks
+            if trial_map.get((sc["id"], target_config, "deny_all"), {}).get("status") == "succeeded"
+        ]
+        succeed_appr = [
+            sc
+            for sc in valid_attacks
+            if trial_map.get((sc["id"], target_config, "approve_all"), {}).get("status")
+            == "succeeded"
+        ]
+        k_in_d_target = sum(
+            1
+            for a_id in in_scope_ids
+            if trial_map.get((a_id, target_config, "deny_all"), {}).get("status") == "succeeded"
+        )
+        rate_in_d_target = (k_in_d_target / len(in_scope_ids) * 100.0) if in_scope_ids else 0.0
+        k_in_a_target = sum(
+            1
+            for a_id in in_scope_ids
+            if trial_map.get((a_id, target_config, "approve_all"), {}).get("status") == "succeeded"
+        )
+
+        lines.extend(
+            [
+                "",
+                "---",
+                "",
+                f"## {sec_idx}. Attack Outcomes Under Frozen Default Profile {target_config}",
+                "",
+                f"### A. Attacks Succeeding Under {target_config} `deny_all` (Unattended Deployment, n = {len(succeed_deny)})",
+                "",
+                f"Zero in-scope attacks succeed under {target_config} `deny_all` ({k_in_d_target}/{len(in_scope_ids)}, {rate_in_d_target:.1f}% in-scope ASR). All {len(succeed_deny)} succeeding attacks belong to pre-registered known-gap or out-of-scope categories:",
+                "",
+                "| ID | Attack Name | Classification | Realism | Outcome (`deny_all`) | Root Cause / Reason |",
+                "|---|---|---|---|---|---|",
+            ]
+        )
+        for sc in succeed_deny:
+            sc_id = sc["id"]
+            name = sc.get("name", sc_id)
+            classification = sc.get("classification", "").upper()
+            realism = sc.get("realism", "realistic")
+            reason = (
+                sc.get("spec_rationale")
+                or sc.get("defense_beating_mechanism")
+                or sc.get("description")
+                or "Documented architectural limitation"
+            )
+            lines.append(
+                f"| `{sc_id}` | {name} | **{classification}** | `{realism}` | `succeeded` | {reason} |"
+            )
+
+        lines.extend(
+            [
+                "",
+                f"### B. Attacks Succeeding Under {target_config} `approve_all` (Attended Worst-Case Deployment, n = {len(succeed_appr)})",
+                "",
+                f"Under attended deployment, {len(succeed_appr)} attack(s) succeed. Of these, {k_in_a_target} in-scope attack(s) succeed solely due to operator approval fatigue (rubber-stamping approval prompts), while the remaining {len(succeed_appr) - k_in_a_target} belong to known-gap or out-of-scope categories:",
+                "",
+                "| ID | Attack Name | Classification | Realism | Outcome (`approve_all`) | Root Cause / Reason |",
+                "|---|---|---|---|---|---|",
+            ]
+        )
+        for sc in succeed_appr:
+            sc_id = sc["id"]
+            name = sc.get("name", sc_id)
+            classification = sc.get("classification", "").upper()
+            realism = sc.get("realism", "realistic")
+            r_c6 = trial_map.get((sc_id, target_config, "approve_all"), {})
+            r_id = (
+                r_c6.get("approval_rules")
+                or trial_map.get((sc_id, target_config, "deny_all"), {}).get("rule_id")
+                or "flow-approval"
+            )
+            if sc["id"] in in_scope_ids:
+                reason = f"In-scope attack required operator approval (rule: `{r_id}`) and succeeded because the operator approved the prompt (modeled approval fatigue)."
+            else:
+                reason = (
+                    sc.get("spec_rationale")
+                    or sc.get("defense_beating_mechanism")
+                    or sc.get("description")
+                    or "Documented architectural limitation"
+                )
+            lines.append(
+                f"| `{sc_id}` | {name} | **{classification}** | `{realism}` | `succeeded` | {reason} |"
+            )
+        sec_idx += 1
 
     # Empirical Appendix: All Benign Workflows Breakdown
     cfg_headers = " | ".join(f"{c} (`deny`/`appr`)" for c in configs)

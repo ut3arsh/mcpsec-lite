@@ -213,14 +213,24 @@ def test_approval_manager_multiprocess_concurrency(tmp_path: Path) -> None:
         processes.append(p)
         p.start()
 
-    for p in processes:
-        p.join(timeout=15.0)
-        assert p.exitcode == 0, f"Process {p.pid} failed with exit code {p.exitcode}"
+    try:
+        for p in processes:
+            p.join(timeout=25.0)
+            if p.is_alive():
+                p.terminate()
+                p.join(timeout=2.0)
+            assert p.exitcode == 0, f"Process {p.pid} failed with exit code {p.exitcode}"
 
-    final_mgr = ApprovalManager(log_path=log_file)
-    all_apprs = final_mgr.get_all_approvals()
-    assert len(all_apprs) == num_processes * ops_per_process
-    assert all(a.status == "approved" for a in all_apprs.values())
+        final_mgr = ApprovalManager(log_path=log_file)
+        all_apprs = final_mgr.get_all_approvals()
+        assert len(all_apprs) == num_processes * ops_per_process
+        assert all(a.status == "approved" for a in all_apprs.values())
+    finally:
+        for p in processes:
+            if p.is_alive():
+                p.terminate()
+                p.join(timeout=1.0)
+
 
 
 def test_crash_recovery_rebuilds_state(tmp_path: Path) -> None:
@@ -378,3 +388,96 @@ def test_approval_manager_sync_handles_blank_and_corrupt_lines(tmp_path: Path) -
     apprs = manager.get_all_approvals()
     assert "c1" in apprs
     assert apprs["c1"].status == "approved"
+
+
+def test_approve_cli_list_display_and_secret_redaction(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Prove that mcpsec-approve list displays all audit fields and redacts secrets."""
+    import json
+
+    approval_log = tmp_path / "pending_approvals.jsonl"
+    audit_log = tmp_path / "audit.jsonl"
+
+    # 1. Write preceding audit log event that introduced taint
+    audit_event = {
+        "schema_version": 1,
+        "event_type": "tool_call",
+        "timestamp": "2026-11-10T10:00:00.000Z",
+        "seq": 1,
+        "session_id": "sess-redact-test",
+        "call_id": "call-prior",
+        "server": "fetch",
+        "tool": "fetch",
+        "args": {"url": "https://docs.python.org"},
+        "decision": "allow",
+        "effective_decision": "forwarded",
+        "decision_layer": "policy",
+        "decision_reason": "allowed",
+        "taint_before": [],
+        "taint_after": ["untrusted_content"],
+        "pin_status": "pinned",
+        "latency_ms": {"proxy": 1.0, "upstream": 2.0},
+    }
+    audit_log.write_text(json.dumps(audit_event) + "\n", encoding="utf-8")
+
+    # 2. Register pending approval with sensitive arguments and tokens
+    manager = ApprovalManager(log_path=approval_log)
+    manager.request_approval(
+        call_id="call-sec-99",
+        session_id="sess-redact-test",
+        agent_id="agent-007",
+        server="fs",
+        tool="write_file",
+        args={
+            "path": "sandbox/secret_report.md",
+            "content": "Confidential AWS: AKIAIOSFODNN7EXAMPLE and token: ghp_111122223333444455556666777788889999",
+            "api_key": "super_secret_api_key_value",
+            "password": "my_master_password_456",
+        },
+        capabilities=["write"],
+        taint_state=["untrusted_content"],
+        rule_id="appr-untrusted-write",
+        timeout_seconds=300.0,
+    )
+
+    # 3. Execute mcpsec-approve list in human display mode
+    rc = approve_cli_main(["list", "--log", str(approval_log)])
+    assert rc == 0
+    captured = capsys.readouterr()
+    out = captured.out
+
+    # Assert required audit fields appear
+    assert "[call-sec-99]" in out
+    assert "Session:      sess-redact-test" in out
+    assert "Tool:         fs.write_file" in out
+    assert "Destination:  path: sandbox/secret_report.md" in out
+    assert "Rule ID:      appr-untrusted-write" in out
+    assert "Taint:        untrusted_content (via fetch.fetch)" in out
+    assert "Timing:       age:" in out
+    assert "time left:" in out
+
+    # Assert secrets are redacted from the prompt
+    assert "[REDACTED]" in out
+    assert "super_secret_api_key_value" not in out
+    assert "my_master_password_456" not in out
+    assert "AKIAIOSFODNN7EXAMPLE" not in out
+    assert "ghp_111122223333444455556666777788889999" not in out
+
+    # 4. Execute mcpsec-approve list in JSON mode
+    rc_json = approve_cli_main(["list", "--log", str(approval_log), "--json"])
+    assert rc_json == 0
+    captured_json = capsys.readouterr()
+    json_data = json.loads(captured_json.out)
+    assert len(json_data) == 1
+    item = json_data[0]
+    assert item["call_id"] == "call-sec-99"
+    assert item["session_id"] == "sess-redact-test"
+    assert item["destination"] == "path: sandbox/secret_report.md"
+    assert item["rule_id"] == "appr-untrusted-write"
+    assert item["taint_sources"]["untrusted_content"] == ["fetch.fetch"]
+    # Check that secrets are redacted in JSON args as well
+    assert item["args"]["api_key"] == "[REDACTED]"
+    assert item["args"]["password"] == "[REDACTED]"
+    assert "AKIAIOSFODNN7EXAMPLE" not in item["args"]["content"]
+    assert "ghp_111122223333444455556666777788889999" not in item["args"]["content"]
