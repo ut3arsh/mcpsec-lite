@@ -119,9 +119,10 @@ All four are pure functions over explicit state, so they are unit-testable and f
 - Audit log: append-only JSONL, single writer task, fsync per entry in strict mode.
 
 ### 4.5 Deployment profiles & operating modes
-Security claims are evaluated under two primary operating modes (ADR-018):
-- **Unattended Mode (`deny_all`):** Operator offline. Any action held for approval times out and is denied. Guarantees fail-closed containment against indirect prompt injection and unauthorized egress.
+Security claims are evaluated under two primary operating modes (ADR-018, ADR-019):
+- **Unattended Mode (`deny_all`):** Operator offline. Any action held for approval times out and is denied. Guarantees fail-closed containment (0% in-scope attack success under default profile C6) against indirect prompt injection, data exfiltration, unauthorized writes, and mid-session tool mutations.
 - **Attended Mode (`approve_all`):** Operator online to review pending approvals. Tested under `approve_all` to establish the upper bound on risk from human operator fatigue or rubber-stamping.
+- **Default Profile (C6):** Restored C5 policy allowlists + curated domain exemptions + flow-rule scratch notes write path exemption (`sandbox/notes/**`) + file-origin untrusted taint sources (`node_modules`, `vendor`, `.venv`, `site-packages`, `downloads`, `sandbox/notes`) + strict tool-description pinning (`pinning.mode: strict`). Documented ablations: C5, E4b, E5.
 
 ## 5. Policy & taint design
 
@@ -222,7 +223,7 @@ JSONL, one entry per call and per approval/pin event. Full spec in `docs/audit_l
 ## 9. Benchmark plan (summary; full spec in `docs/benchmark_spec.md`)
 - **External:** AgentDojo (primary), InjecAgent (cut first if time slips). These use their own harnesses; budget ~2 weeks of adapter work via `mcpsec_core`.
 - **MCP-native, held-out:** GitHub-issue and web-page injection scenarios written **after** detector logic is frozen; never used for tuning.
-- **Configs:** baseline (C0) · policy only (C1) · policy + flow (C2) · policy + flow + detectors (C3) · strict pinning (C4) · freeze candidate (C5).
+- **Configs:** baseline (C0) · policy only (C1) · policy + flow (C2) · policy + flow + detectors (C3) · strict pinning (C4) · freeze candidate (C5) · frozen default profile (C6; ablations: C5, E4b, E5).
 - **Deployment modes:** Unattended (`deny_all`) and Attended (`approve_all`).
 - **Models:** 2–3 (one open-weight), multiple trials each, report variance. Cost budget ≈ $100–200.
 - **Metrics:** attack success rate (unattended vs attended), false-positive rate on benign runs, latency overhead.

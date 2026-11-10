@@ -132,3 +132,24 @@ Format: **Status · Context · Decision · Consequences.**
 - C5 provides an explicit freeze candidate evaluated under both unattended and attended paradigms.
 - Flow-rule path exemptions enable fine-grained isolation of scratch directories (e.g. `sandbox/notes/**`), reducing human operator fatigue on benign synthesis tasks.
 - If an agent writes malicious instructions to an exempt scratch directory (e.g. cross-session persistence), path exemptions permit the write without approval; this is tracked as a documented known-gap tradeoff.
+
+## ADR-019 — Adoption of C6 as Final Default Profile and Two-Mode Deployment Model
+**Status:** Accepted · 2026-11-10
+**Context:**
+1. Ablation experiments across Chunks 5.17–5.17c demonstrated:
+   - Configuration C5 (restored E3) established approval-based untrusted egress containment with curated domain exemptions.
+   - Configuration E4b introduced flow-rule write path exemptions (`sandbox/notes/**`), eliminating approval friction for local synthesis and scratch notes without loosening code directory protections.
+   - Configuration E5 introduced file-origin untrusted content taint sources on filesystem read tools for non-project directories (`**/node_modules/**`, `**/vendor/**`, `**/.venv/**`, `**/site-packages/**`, `**/downloads/**`, and scratch output `sandbox/notes/**`), preventing untrusted dependency injection and cross-session persistence poisoning from escaping taint boundaries.
+2. In-scope attack ATTACK-23 evaluates mid-session upstream tool-description rug-pull / mutation attacks. Under unpinned configurations (C1, C2, C5, E4b, E5), an upstream server can alter tool descriptions mid-session without triggering policy or flow rule violations. Strict tool-description pinning (`pinning.mode: strict`, as demonstrated in C4) computes deterministic hashes over non-volatile schema fields and rejects unauthorized mutations.
+3. Combining E5 with strict tool-description pinning yields configuration `C6`.
+**Decision:**
+1. Adopt `C6` (`benchmark/configs/C6.yaml`: E5 + `pinning: { mode: strict, store: ./benchmark/configs/pins.json }`) as the frozen default profile for `mcpsec-lite`.
+2. Retain configurations C0–C5 unchanged in specification and disk; maintain E4b and E5 as documented ablations.
+3. Formally specify the security guarantees and claims for the two deployment modes under C6:
+   - **Unattended Deployment Mode (`deny_all`):** Automated execution without human operator presence. Pending approval requests time out and fail closed to denial. Security claim: 0% in-scope attack success rate (ASR = 0/21, 0.0%) against indirect prompt injection, data exfiltration, unauthorized file writes, and mid-session tool mutations. Benign workflow completion is determined by whether the task strictly avoids unapproved writes or egress outside exempt paths and curated domains.
+   - **Attended Deployment Mode (`approve_all`):** Operator availability where human reviewers decide pending approvals. Evaluated under `approve_all` to establish the theoretical upper bound on risk under complete operator approval fatigue / rubber-stamping. In this mode, in-scope attacks that reach the approval tier succeed if blindly approved, underscoring that human approval is a human-in-the-loop defense requiring high-fidelity contextual prompts.
+**Consequences:**
+- C6 provides a hardened, deterministic defense combining static capability allowlists, fine-grained path and domain flow-rule exemptions, file-origin untrusted taint tracking, and cryptographic tool-description pinning.
+- C5, E4b, and E5 remain preserved as ablations showing the incremental security and false-positive impacts of each defensive layer.
+- Operators deploying in unattended environments obtain strong automated containment (0% in-scope ASR), while attended environments rely on informative approval prompts to prevent approval fatigue.
+

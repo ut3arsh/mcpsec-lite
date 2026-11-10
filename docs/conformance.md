@@ -28,6 +28,7 @@ This document maps normative requirements (`MUST`, `MUST NOT`, `SHOULD`, `REQUIR
 | **§5.1 Network Egress Semantics** | Any tool transmitting caller data outside trust boundary carries `egress` (fetch carries `[network_read, egress]`) | `mcpsec_core/adapters.py` & Policy capabilities | [`tests/test_flow_proxy_e2e.py`](file:///c:/Users/BIT%20PATNA/ai-agent-firewall/tests/test_flow_proxy_e2e.py) |
 | **§6 Generic Error Responses** | Enforce denials return generic `"Denied by mcpsec policy"` to agent | `ProxySession.call_tool` | [`tests/test_proxy_policy.py`](file:///c:/Users/BIT%20PATNA/ai-agent-firewall/tests/test_proxy_policy.py), [`tests/test_flow_proxy_e2e.py`](file:///c:/Users/BIT%20PATNA/ai-agent-firewall/tests/test_flow_proxy_e2e.py) |
 | **§7 Tool-Description Pinning** | Pin store hashing with strict mode masking from `tools/list` and call rejection | `PinStore`, `ProxySession` | [`tests/test_pinning.py`](file:///c:/Users/BIT%20PATNA/ai-agent-firewall/tests/test_pinning.py) |
+| **§8 Frozen Default Profile (C6)** | Integrated defense profile: restored C5 allowlists + curated domain exemptions + flow-rule path exemption + file-origin untrusted taint + strict tool-description pinning (ADR-019) | `benchmark/configs/C6.yaml`, `ProxySession` | [`tests/test_flow_path_unless.py`](file:///c:/Users/BIT%20PATNA/ai-agent-firewall/tests/test_flow_path_unless.py), [`tests/test_pinning.py`](file:///c:/Users/BIT%20PATNA/ai-agent-firewall/tests/test_pinning.py) |
 
 ---
 
@@ -65,5 +66,7 @@ This document maps normative requirements (`MUST`, `MUST NOT`, `SHOULD`, `REQUIR
 1. **HTTP Redirects:** Policy evaluates the initial URL host; if an upstream tool follows HTTP 30x redirects to unlisted IPs, domain allowlists do not intercept subsequent hops (addressed via network-level egress proxy in Week 6; see `docs/egress_guard_design.md`).
 2. **GitHub Parameter Encoding:** While `fetch` carries `egress`, GitHub read tools (e.g. `github.get_issue`) can theoretically encode data in `owner` or `repo` arguments (accepted v1 limitation).
 3. **Coarse Session Taint:** Taint is tracked per session rather than per-argument provenance.
+4. **Attended vs Unattended Deployment Claims (ADR-018, ADR-019):** Unattended deployments guarantee 0% in-scope attack success by failing closed on unapproved flows; attended deployments depend on operator diligence against approval fatigue.
+
 
 
