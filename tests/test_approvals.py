@@ -232,7 +232,6 @@ def test_approval_manager_multiprocess_concurrency(tmp_path: Path) -> None:
                 p.join(timeout=1.0)
 
 
-
 def test_crash_recovery_rebuilds_state(tmp_path: Path) -> None:
     log_file = tmp_path / "crash_recovery.jsonl"
     manager1 = ApprovalManager(log_path=log_file)
