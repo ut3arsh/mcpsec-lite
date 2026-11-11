@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import math
+import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -19,6 +21,10 @@ from typing import Any
 
 class TrialCompletenessError(ValueError):
     """Raised when trial records are missing, duplicated, or incomplete."""
+
+
+class ConfigIntegrityError(ValueError):
+    """Raised when a benchmark configuration fails pre-registration integrity checks."""
 
 
 def wilson_interval(k: int, n: int, confidence: float = 0.95) -> tuple[float, float]:
@@ -154,6 +160,64 @@ def validate_trial_completeness(
         raise TrialCompletenessError("; ".join(error_msgs))
 
 
+def validate_config_integrity(
+    run_config: dict[str, Any],
+    config_dir: Path = Path("benchmark/configs"),
+) -> None:
+    """Validate that config hashes on disk match pre-registered commit and recorded hashes.
+
+    Fails closed: if any configuration's SHA-256 differs from the registered commit
+    or from recorded config_hashes in run.json, raises ConfigIntegrityError naming
+    the mismatched configuration, actual hash, and expected hash.
+    """
+    reg_commit = run_config.get("registration_commit")
+    recorded_hashes: dict[str, str] = run_config.get("config_hashes") or {}
+    configs: list[str] = run_config.get("configs") or []
+
+    # If neither registration_commit nor config_hashes is specified (e.g. legacy runs), return
+    if not reg_commit and not recorded_hashes:
+        return
+
+    mismatches: list[str] = []
+
+    for cfg in configs:
+        cfg_file = config_dir / f"{cfg}.yaml"
+        if not cfg_file.exists():
+            mismatches.append(f"Config '{cfg}' missing from disk at {cfg_file}")
+            continue
+
+        actual_sha = hashlib.sha256(cfg_file.read_bytes()).hexdigest()
+
+        # Check against recorded config_hashes in run.json if present
+        if recorded_hashes and cfg in recorded_hashes:
+            rec_sha = recorded_hashes[cfg]
+            if actual_sha != rec_sha:
+                mismatches.append(
+                    f"Config '{cfg}' sha256 mismatch against run.json: actual={actual_sha}, recorded={rec_sha}"
+                )
+
+        # Check against pre-registered git commit if present
+        if reg_commit:
+            try:
+                rel_path = f"benchmark/configs/{cfg}.yaml"
+                git_bytes = subprocess.check_output(
+                    ["git", "show", f"{reg_commit}:{rel_path}"],
+                    stderr=subprocess.PIPE,
+                )
+                commit_sha = hashlib.sha256(git_bytes).hexdigest()
+                if actual_sha != commit_sha:
+                    mismatches.append(
+                        f"Config '{cfg}' sha256 mismatch against commit {reg_commit}: actual={actual_sha}, registered={commit_sha}"
+                    )
+            except subprocess.CalledProcessError as exc:
+                mismatches.append(
+                    f"Failed to retrieve registered config '{cfg}' at commit {reg_commit}: {exc}"
+                )
+
+    if mismatches:
+        raise ConfigIntegrityError("; ".join(mismatches))
+
+
 @dataclass(frozen=True)
 class RuleApprovalStats:
     rule_id: str
@@ -201,6 +265,7 @@ def generate_analysis_report(
     run_config: dict[str, Any],
     attack_manifest: dict[str, Any],
     benign_manifests: list[dict[str, Any]],
+    config_dir: Path = Path("benchmark/configs"),
 ) -> str:
     """Generate generic, data-driven Markdown analysis report for evaluations >= 5.16."""
     date_str = str(run_config.get("date", "2026-11-04"))
@@ -242,7 +307,8 @@ def generate_analysis_report(
 
     combined_ids = [s["id"] for s in combined_benign]
 
-    # Completeness validation
+    # Pre-registration integrity and completeness validation
+    validate_config_integrity(run_config, config_dir=config_dir)
     expected_scenario_ids = [s["id"] for s in all_attacks] + combined_ids
     validate_trial_completeness(trials, expected_scenario_ids, configs, approval_modes)
 
@@ -1144,6 +1210,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     except TrialCompletenessError as exc:
         sys.stderr.write(f"TrialCompletenessError: {exc}\n")
+        return 1
+    except ConfigIntegrityError as exc:
+        sys.stderr.write(f"ConfigIntegrityError: {exc}\n")
         return 1
     except Exception as exc:
         sys.stderr.write(f"Error generating analysis report: {exc}\n")

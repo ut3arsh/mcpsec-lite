@@ -592,3 +592,53 @@ def test_chunk_5_18a_byte_for_byte_reproducibility() -> None:
     assert actual_bytes == expected_bytes, (
         "Regenerating Chunk 5.18a C6 analysis report failed byte-for-byte check"
     )
+
+
+def test_config_integrity_validation_success() -> None:
+    """Prove that valid matching pre-registered configs pass integrity verification."""
+    from benchmark.analysis import validate_config_integrity
+
+    run_config = {
+        "configs": ["C0", "C1", "C2", "C5", "C6"],
+        "registration_commit": "273b22f",
+        "config_hashes": {
+            "C0": "0e964bca315372ca180ff5af0eef57ce2a5b5ee08f196b06d065e01d68ed8f3c",
+            "C1": "9d6fe8d77e85466dccd0a001a80c31c1b337fa71d4795576b1c3ce566a248d2e",
+            "C2": "9ead6b3523f7ac6624b071d98fa786db807e18ced3942b87a7d941087f46f8f9",
+            "C5": "fb4c23d81eb35c628cc12ecfe957e0cb39faf4b3ac6021d94d245a4b9afb352a",
+            "C6": "8529d77552179d6e0210e9d6e99f35f81548c35b652acac867cbf9be8b745034",
+        },
+    }
+    # Must succeed without error
+    validate_config_integrity(run_config, config_dir=Path("benchmark/configs"))
+
+
+def test_config_integrity_validation_fails_on_hash_mismatch(tmp_path: Path) -> None:
+    """Prove that a tampered config hash raises ConfigIntegrityError."""
+    from benchmark.analysis import ConfigIntegrityError, validate_config_integrity
+
+    # Case 1: recorded hash in run.json doesn't match actual file
+    bad_recorded_config = {
+        "configs": ["C6"],
+        "config_hashes": {
+            "C6": "badbeef000000000000000000000000000000000000000000000000000000000",
+        },
+    }
+    with pytest.raises(ConfigIntegrityError) as exc_info:
+        validate_config_integrity(bad_recorded_config, config_dir=Path("benchmark/configs"))
+    assert "Config 'C6' sha256 mismatch against run.json" in str(exc_info.value)
+
+    # Case 2: file on disk doesn't match pre-registered git commit
+    # Create a temporary config dir with tampered C6.yaml
+    tampered_dir = tmp_path / "tampered_configs"
+    tampered_dir.mkdir()
+    (tampered_dir / "C6.yaml").write_text("tampered: true\nmode: audit\n", encoding="utf-8")
+
+    tampered_run_config = {
+        "configs": ["C6"],
+        "registration_commit": "273b22f",
+    }
+    with pytest.raises(ConfigIntegrityError) as exc_info2:
+        validate_config_integrity(tampered_run_config, config_dir=tampered_dir)
+    assert "Config 'C6' sha256 mismatch against commit 273b22f" in str(exc_info2.value)
+

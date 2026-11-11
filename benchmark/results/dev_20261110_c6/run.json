@@ -6,6 +6,14 @@
   "target_config": "C6",
   "conflict_matrix_config": "C6",
   "include_c6_outcomes": true,
+  "registration_commit": "273b22f",
+  "config_hashes": {
+    "C0": "0e964bca315372ca180ff5af0eef57ce2a5b5ee08f196b06d065e01d68ed8f3c",
+    "C1": "9d6fe8d77e85466dccd0a001a80c31c1b337fa71d4795576b1c3ce566a248d2e",
+    "C2": "9ead6b3523f7ac6624b071d98fa786db807e18ced3942b87a7d941087f46f8f9",
+    "C5": "fb4c23d81eb35c628cc12ecfe957e0cb39faf4b3ac6021d94d245a4b9afb352a",
+    "C6": "8529d77552179d6e0210e9d6e99f35f81548c35b652acac867cbf9be8b745034"
+  },
   "approval_modes": ["deny_all", "approve_all"],
   "attack_manifest": "benchmark/attacks/dev/manifest.json",
   "benign_manifests": [

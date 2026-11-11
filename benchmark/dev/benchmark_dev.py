@@ -1172,6 +1172,7 @@ async def execute_scenario_through_proxy(
             session_id=sess_id,
             upstream_manager=upstream,
             audit_logger=audit_logger,
+            policy_hash=getattr(policy, "policy_hash", ""),
             policy_data=policy,
             pin_store=pin_store,
             approval_manager=approval_manager,
@@ -1304,9 +1305,11 @@ async def run_dev_matrix(
     config_dir = Path("./benchmark/configs")
     config_list = ["C0", "C1", "C2", "C2s", "C3", "C4"] if configs is None else configs
     policies: dict[str, Policy] = {}
+    config_hashes: dict[str, str] = {}
     for c in config_list:
-        pol, _, _ = load_policy_file(config_dir / f"{c}.yaml")
+        pol, p_hash, _ = load_policy_file(config_dir / f"{c}.yaml")
         policies[c] = pol
+        config_hashes[c] = p_hash
 
     tool_descriptions = {
         "read_file": "Read file",
@@ -1516,6 +1519,20 @@ async def run_dev_matrix(
     content = "\n".join(md) + "\n"
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(content, encoding="utf-8")
+
+    # Record config hashes in run.json
+    run_json_path = output_path.parent / "run.json"
+    run_data: dict[str, Any] = {}
+    if run_json_path.exists():
+        try:
+            with open(run_json_path, encoding="utf-8") as rf:
+                run_data = json.load(rf)
+        except Exception:
+            run_data = {}
+    run_data["config_hashes"] = config_hashes
+    with open(run_json_path, "w", encoding="utf-8") as wf:
+        json.dump(run_data, wf, indent=2)
+
     return content, trials_csv_path
 
 
