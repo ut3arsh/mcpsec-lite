@@ -94,7 +94,7 @@ def main() -> None:
     for idx, t in enumerate(tools):
         name = t.get("name", "")
         desc = t.get("description", "")[:60]
-        print(f"{idx+1:2d}. {name}: {desc}...")
+        print(f"{idx + 1:2d}. {name}: {desc}...")
 
 
 if __name__ == "__main__":

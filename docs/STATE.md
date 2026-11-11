@@ -1,17 +1,18 @@
 # STATE.md — current project state (update at the end of every chunk; verified facts only)
 
-**As of:** end of week 5, chunk 5.18a.
+**As of:** end of week 5, chunk 5.18b.
 
 ## Built (verified)
 - Weeks 1–4: pass-through proxy, JSONL audit log, policy engine (default deny, path/domain matching), multi-upstream aggregation, taint + flow rules (with `unless` exemption), approval queue + CLI, CI workflow, conformance matrix.
 - Week 5 (chunks 5.2–5.6c): tool-description pinning, generic agent-facing denials, `tools/list_changed` re-fetching, pure `check_pinning`, meta-test on 11 protections, CI `--cov-fail-under=90` scoped to `mcpsec_core`, POSIX process tree hygiene (`/proc` descendant-walk kill, child PID tracking, crash-restart supervision), GitHub Actions pinned to Node 24 majors.
 - Chunk 5.7–5.13: benchmark validation (C1 aligned with C2 allowlists; ATTACK-22 invalid; ATTACK-24 known-gap; approval modes `deny_all` vs `approve_all`), reproducible reporting tables, CI security gate (`pip-audit` on `requirements.lock`), cross-process locks, audit log rotation and hash-chain tampering verification, exact coverage gate, skips/xfails CI evidence correction, 6 mutation checks, 85% per-module floor.
 - Chunk 5.14–5.17c: pre-registered benign workflows (v1..v4); automated `analysis.py` with Wilson 95% CIs and matrix completeness validation; ADR-018 (C5 adoption); flow-rule `unless.path_allowlist`; E4b / E5 ablations with file-origin untrusted taint and multi-session seeding.
-- Chunk 5.18a: pre-registered ADR-019 (C6 default profile adoption, two-mode deployment model) and pre-registered `benchmark/configs/C6.yaml` (E5 + strict tool-description pinning) committed in `273b22f`; updated specs and `README.md` limitations from generated report; enhanced `cli/approve_cli.py` to display all audit prompt fields with secret redaction (verified by new unit test); executed benchmark matrix C0, C1, C2, C5, C6 across all 50 benign and 32 valid attack scenarios in both modes (830 trials); verified byte-for-byte analysis report reproducibility.
+- Chunk 5.18a: pre-registered ADR-019 (C6 default profile adoption, two-mode deployment model) and pre-registered `benchmark/configs/C6.yaml` committed in `273b22f`; executed benchmark matrix C0, C1, C2, C5, C6 (830 trials); verified byte-for-byte analysis report reproducibility.
+- Chunk 5.18b: pre-freeze verification: verified C6 byte-for-byte integrity against commit `273b22f`; implemented `ConfigIntegrityError` in `benchmark/analysis.py` and SHA-256 recording in runner; hardened `cli/approve_cli.py` against ANSI ESC, Bidi overrides, NUL, and overlong payloads; captured real GitHub MCP server schema (26 tools) to `tests/fixtures/github.tools.real.json` and authored `docs/github_snapshot_diff.md`; full history secret scan across 128 commits triaged (0 real secrets) and wired into CI workflow; created `SECURITY.md` and synced `README.md`.
 
-## Verified Numbers (chunk 5.18a run)
-- **Plain unit suite (`pytest`)**: 250 passed, 2 skipped, 8 deselected, 2 xfailed in 44.96s (< 60s).
-- **Static checks**: `mypy --strict` clean (75 source files), `ruff check` clean, `ruff format` clean.
+## Verified Numbers (chunk 5.18b run)
+- **Plain unit suite (`pytest`)**: 253 passed, 2 skipped, 8 deselected, 2 xfailed in 52.11s (< 60s).
+- **Static checks**: `mypy --strict` clean (77 source files), `ruff check` clean, `ruff format` clean (125 source files).
 - **Benchmark Matrix (n=50 benign, n=32 valid attacks, 830 trials)**:
   - Benign Hard-Block Rate (`deny_all`): C0 0.00%, C1 0.00%, C2 20.00%, C5 0.00%, C6 0.00% (C6 PASS $\le 5.0\%$).
   - Benign Completion Rate (`approve_all`): C0 100.0%, C1 100.0%, C2 80.0%, C5 100.0%, C6 100.0% (C6 PASS $\ge 90.0\%$).

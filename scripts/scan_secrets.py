@@ -116,7 +116,7 @@ def main() -> int:
         print("\nDetailed Findings:")
         for idx, f in enumerate(findings):
             print(
-                f"[{idx+1:2d}] Commit {f.commit_sha} ({f.commit_subject[:50]}...)\n"
+                f"[{idx + 1:2d}] Commit {f.commit_sha} ({f.commit_subject[:50]}...)\n"
                 f"     File:   {f.file_path}:{f.line_number}\n"
                 f"     Rule:   {f.rule_name}\n"
                 f"     Match:  {f.match_snippet[:60]}"
@@ -138,12 +138,8 @@ def main() -> int:
             "dummy_capture_token_offline",
             "-----BEGIN RSA PRIVATE KEY-----",
         ]
-        is_known_fixture = (
-            any(tok in f.match_snippet for tok in fixture_tokens)
-            or any(
-                p in f.file_path.lower()
-                for p in ("test", "evidence", "script", "benchmark", "demo")
-            )
+        is_known_fixture = any(tok in f.match_snippet for tok in fixture_tokens) or any(
+            p in f.file_path.lower() for p in ("test", "evidence", "script", "benchmark", "demo")
         )
         if not is_known_fixture:
             real_secrets.append(f)

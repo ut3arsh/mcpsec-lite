@@ -641,4 +641,3 @@ def test_config_integrity_validation_fails_on_hash_mismatch(tmp_path: Path) -> N
     with pytest.raises(ConfigIntegrityError) as exc_info2:
         validate_config_integrity(tampered_run_config, config_dir=tampered_dir)
     assert "Config 'C6' sha256 mismatch against commit 273b22f" in str(exc_info2.value)
-

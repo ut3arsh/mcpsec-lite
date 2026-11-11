@@ -570,4 +570,3 @@ def test_approve_cli_prompt_sanitization_and_hardening(
     assert item["call_id"] == "call-hostile-1"
     assert "write_file" in item["tool"]
     assert "sandbox/" in item["args"]["path"]
-
