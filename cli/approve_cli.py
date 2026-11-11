@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import unicodedata
 import urllib.parse
 from datetime import UTC, datetime
 from pathlib import Path
@@ -34,8 +35,56 @@ def resolve_audit_log_path(explicit_path: Path | None, approvals_log_path: Path)
     return explicit_path if explicit_path is not None else None
 
 
+def sanitize_untrusted_text(text: str, max_length: int = 160) -> str:
+    r"""Sanitize attacker-influenced text for terminal / human display.
+
+    Escapes C0/C1 control characters (including ANSI ESC and NUL) as visible \xNN literals.
+    Escapes Unicode bidirectional overrides and zero-width/formatting characters as visible \uNNNN.
+    Truncates strings exceeding max_length with '...[truncated]'.
+    """
+    if not isinstance(text, str):
+        text = str(text)
+
+    out: list[str] = []
+    for c in text:
+        cp = ord(c)
+        if cp < 0x20 or cp == 0x7F or (0x80 <= cp <= 0x9F):
+            out.append(f"\\x{cp:02x}")
+        elif (
+            unicodedata.category(c) in ("Cf", "Cs")
+            or (0x200B <= cp <= 0x200F)
+            or (0x202A <= cp <= 0x202E)
+            or (0x2060 <= cp <= 0x2069)
+            or cp == 0xFEFF
+        ):
+            out.append(f"\\u{cp:04x}")
+        else:
+            out.append(c)
+
+    escaped = "".join(out)
+    if len(escaped) > max_length:
+        escaped = escaped[:max_length] + "...[truncated]"
+    return escaped
+
+
+def sanitize_display_value(val: Any, max_length: int = 160) -> Any:
+    """Recursively sanitize text within data structures for display."""
+    if isinstance(val, str):
+        return sanitize_untrusted_text(val, max_length=max_length)
+    if isinstance(val, dict):
+        return {
+            sanitize_untrusted_text(str(k), max_length=max_length): sanitize_display_value(
+                v, max_length=max_length
+            )
+            for k, v in val.items()
+        }
+    if isinstance(val, list):
+        return [sanitize_display_value(v, max_length=max_length) for v in val]
+    return val
+
+
 def load_taint_sources_from_audit(audit_log_path: Path | None) -> dict[str, dict[str, list[str]]]:
-    """Parse audit log to map session_id -> {taint_label: [source_tool_ids]}."""
+    """Parse audit log to map session_id -> {taint_label: [source_tool_ids_with_destination]}."""
     if audit_log_path is None or not audit_log_path.exists():
         return {}
     sources_by_session: dict[str, dict[str, list[str]]] = {}
@@ -61,11 +110,26 @@ def load_taint_sources_from_audit(audit_log_path: Path | None) -> dict[str, dict
                     srv = data.get("server", "")
                     tool = data.get("tool", "")
                     tool_id = f"{srv}.{tool}" if srv else tool
+                    args = data.get("args") or {}
+                    dest_info = ""
+                    if isinstance(args, dict):
+                        if "url" in args and args["url"]:
+                            dest_info = f"url: {args['url']}"
+                        elif "path" in args and args["path"]:
+                            dest_info = f"path: {args['path']}"
+                        elif "paths" in args and args["paths"]:
+                            dest_info = f"paths: {args['paths']}"
+
+                    if dest_info:
+                        source_entry = f"{tool_id} [{dest_info}]"
+                    else:
+                        source_entry = tool_id
+
                     sess_map = sources_by_session.setdefault(sess_id, {})
                     for lbl in new_labels:
                         sess_map.setdefault(lbl, [])
-                        if tool_id not in sess_map[lbl]:
-                            sess_map[lbl].append(tool_id)
+                        if source_entry not in sess_map[lbl]:
+                            sess_map[lbl].append(source_entry)
     except Exception:
         pass
     return sources_by_session
@@ -221,36 +285,39 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"Pending approval requests ({len(pending)}):")
                 for a in pending:
                     dest = extract_destination(a.args)
+                    dest_sanitized = sanitize_untrusted_text(dest)
                     redacted_args = redactor.redact_args(a.args)
+                    display_args = sanitize_display_value(redacted_args)
                     age_str, time_left_str = compute_timing(a.created_at, a.expires_at)
                     sess_sources = audit_sources.get(a.session_id, {})
                     taint_items = []
                     for label in a.taint_state:
                         srcs = sess_sources.get(label)
                         if srcs:
-                            taint_items.append(f"{label} (via {', '.join(srcs)})")
+                            sanitized_srcs = [sanitize_untrusted_text(s) for s in srcs]
+                            taint_items.append(f"{label} (via {', '.join(sanitized_srcs)})")
                         else:
                             taint_items.append(label)
                     taint_display = ", ".join(taint_items) if taint_items else "none"
 
-                    print(f"  [{a.call_id}]")
-                    print(f"    Session:      {a.session_id}")
-                    print(f"    Tool:         {a.server}.{a.tool}")
-                    print(f"    Destination:  {dest}")
-                    print(f"    Rule ID:      {a.rule_id}")
+                    print(f"  [{sanitize_untrusted_text(a.call_id)}]")
+                    print(f"    Session:      {sanitize_untrusted_text(a.session_id)}")
+                    print(f"    Tool:         {sanitize_untrusted_text(f'{a.server}.{a.tool}')}")
+                    print(f"    Destination:  {dest_sanitized}")
+                    print(f"    Rule ID:      {sanitize_untrusted_text(a.rule_id)}")
                     print(f"    Taint:        {taint_display}")
                     print(f"    Timing:       age: {age_str}, time left: {time_left_str}")
-                    print(f"    Args:         {json.dumps(redacted_args)}")
+                    print(f"    Args:         {json.dumps(display_args)}")
         return 0
 
     elif args.command == "approve":
         ok = manager.approve(args.call_id, operator=args.operator, reason=args.reason)
         if ok:
-            print(f"Call '{args.call_id}' approved successfully.")
+            print(f"Call '{sanitize_untrusted_text(args.call_id)}' approved successfully.")
             return 0
         else:
             print(
-                f"Error: Call '{args.call_id}' not found or already in terminal state.",
+                f"Error: Call '{sanitize_untrusted_text(args.call_id)}' not found or already in terminal state.",
                 file=sys.stderr,
             )
             return 1
@@ -258,11 +325,11 @@ def main(argv: list[str] | None = None) -> int:
     elif args.command == "deny":
         ok = manager.deny(args.call_id, operator=args.operator, reason=args.reason)
         if ok:
-            print(f"Call '{args.call_id}' denied successfully.")
+            print(f"Call '{sanitize_untrusted_text(args.call_id)}' denied successfully.")
             return 0
         else:
             print(
-                f"Error: Call '{args.call_id}' not found or already in terminal state.",
+                f"Error: Call '{sanitize_untrusted_text(args.call_id)}' not found or already in terminal state.",
                 file=sys.stderr,
             )
             return 1

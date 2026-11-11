@@ -452,7 +452,7 @@ def test_approve_cli_list_display_and_secret_redaction(
     assert "Tool:         fs.write_file" in out
     assert "Destination:  path: sandbox/secret_report.md" in out
     assert "Rule ID:      appr-untrusted-write" in out
-    assert "Taint:        untrusted_content (via fetch.fetch)" in out
+    assert "Taint:        untrusted_content (via fetch.fetch [url: https://docs.python.org])" in out
     assert "Timing:       age:" in out
     assert "time left:" in out
 
@@ -474,9 +474,100 @@ def test_approve_cli_list_display_and_secret_redaction(
     assert item["session_id"] == "sess-redact-test"
     assert item["destination"] == "path: sandbox/secret_report.md"
     assert item["rule_id"] == "appr-untrusted-write"
-    assert item["taint_sources"]["untrusted_content"] == ["fetch.fetch"]
+    assert item["taint_sources"]["untrusted_content"] == [
+        "fetch.fetch [url: https://docs.python.org]"
+    ]
     # Check that secrets are redacted in JSON args as well
     assert item["args"]["api_key"] == "[REDACTED]"
     assert item["args"]["password"] == "[REDACTED]"
     assert "AKIAIOSFODNN7EXAMPLE" not in item["args"]["content"]
     assert "ghp_111122223333444455556666777788889999" not in item["args"]["content"]
+
+
+def test_approve_cli_prompt_sanitization_and_hardening(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Prove that attacker-influenced strings are sanitized (C0/C1, Bidi, NUL, truncation)
+
+    while --json remains strictly valid JSON.
+    """
+    import json
+
+    approval_log = tmp_path / "pending_hostile.jsonl"
+    audit_log = tmp_path / "audit_hostile.jsonl"
+
+    # Preceding audit event with hostile URL containing ESC, Bidi override, NUL, and overlong text
+    hostile_url = "https://attacker.com/sink\x1b[2J\u202eoverride\x00extra?" + ("v" * 300)
+    audit_event = {
+        "schema_version": 1,
+        "event_type": "tool_call",
+        "timestamp": "2026-11-10T11:00:00.000Z",
+        "seq": 1,
+        "session_id": "sess-hostile-\x1b[2J-test",
+        "call_id": "call-hostile-prior",
+        "server": "fetch",
+        "tool": "fetch",
+        "args": {"url": hostile_url},
+        "decision": "allow",
+        "effective_decision": "forwarded",
+        "decision_layer": "policy",
+        "decision_reason": "allowed",
+        "taint_before": [],
+        "taint_after": ["untrusted_content"],
+        "pin_status": "pinned",
+        "latency_ms": {"proxy": 1.0, "upstream": 2.0},
+    }
+    audit_log.write_text(json.dumps(audit_event) + "\n", encoding="utf-8")
+
+    # Hostile approval request
+    overlong_arg = "PAYLOAD_" + ("B" * 400)
+    manager = ApprovalManager(log_path=approval_log)
+    manager.request_approval(
+        call_id="call-hostile-1",
+        session_id="sess-hostile-\x1b[2J-test",
+        agent_id="agent-eval",
+        server="fs",
+        tool="write_file\x1b[2J",
+        args={
+            "path": "sandbox/\u202efile\x00name.txt",
+            "body": overlong_arg,
+            "cmd": "rm -rf /\x1b[2J",
+        },
+        capabilities=["write"],
+        taint_state=["untrusted_content"],
+        rule_id="rule-\x1b[2J-\u202e-test",
+        timeout_seconds=120.0,
+    )
+
+    # 1. Text display mode: control characters must be escaped, not rendered raw
+    rc_text = approve_cli_main(["list", "--log", str(approval_log), "--audit-log", str(audit_log)])
+    assert rc_text == 0
+    captured_text = capsys.readouterr().out
+
+    # Verify no unescaped raw control bytes exist in output
+    assert "\x1b[2J" not in captured_text
+    assert "\u202e" not in captured_text
+    assert "\x00" not in captured_text
+
+    # Verify visible escaped representations appear in output
+    assert r"\x1b[2J" in captured_text
+    assert r"\u202e" in captured_text
+    assert r"\x00" in captured_text
+
+    # Verify overlong values are truncated with marker
+    assert "...[truncated]" in captured_text
+
+    # 2. JSON mode: must remain strictly valid JSON
+    rc_json = approve_cli_main(
+        ["list", "--log", str(approval_log), "--audit-log", str(audit_log), "--json"]
+    )
+    assert rc_json == 0
+    captured_json = capsys.readouterr().out
+
+    parsed = json.loads(captured_json)
+    assert len(parsed) == 1
+    item = parsed[0]
+    assert item["call_id"] == "call-hostile-1"
+    assert "write_file" in item["tool"]
+    assert "sandbox/" in item["args"]["path"]
+
