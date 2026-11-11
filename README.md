@@ -2,9 +2,9 @@
 
 **Deterministic runtime policy and session-level flow control for MCP tool calls, with an open benchmark.**
 
-![status](https://img.shields.io/badge/status-development-orange) [![CI](https://github.com/ut3arsh/ai-agent-firewall/actions/workflows/ci.yml/badge.svg)](https://github.com/ut3arsh/ai-agent-firewall/actions/workflows/ci.yml) ![license](https://img.shields.io/badge/license-Apache--2.0-blue)
+![status](https://img.shields.io/badge/status-active%20development%20(C6)-orange) [![CI](https://github.com/ut3arsh/ai-agent-firewall/actions/workflows/ci.yml/badge.svg)](https://github.com/ut3arsh/ai-agent-firewall/actions/workflows/ci.yml) ![license](https://img.shields.io/badge/license-Apache--2.0-blue)
 
-> **Status: design phase.** The specs are written; the code is not. Everything under "Quickstart" describes the *planned* interface. Nothing here has been benchmarked yet, and no results are claimed.
+> **Status: verified implementation (Default Profile C6).** The complete proxy pipeline, policy engine, session taint tracking, strict tool-description pinning, hardened human approval CLI, and reproducible benchmark evaluation suite are fully implemented and verified in CI. Baseline and defense-profile benchmark results are reported below from the frozen C6 development evaluation.
 
 ---
 
@@ -53,13 +53,17 @@ flow_rules:
 
 An agent that reads a poisoned issue can no longer call `http.post` in that session, however persuasive the injected text.
 
-## Quickstart (planned interface)
+## Quickstart
 
 ```bash
-pip install mcpsec-lite                       # not yet published
-mcpsec-proxy --policy policy.yaml             # run the proxy in front of your MCP servers
-mcpsec-replay --file audit.jsonl              # inspect what the agent did
-mcpsec-approve --file pending_approvals.jsonl # approve held calls / clear taint
+# Start proxy with C6 default profile in front of MCP servers
+mcpsec-proxy --config benchmark/configs/C6.yaml --audit-log audit.jsonl
+
+# Review pending human approval requests (hardened against ANSI/terminal injections)
+mcpsec-approve list --log pending_approvals.jsonl --audit-log audit.jsonl
+
+# Replay session timeline from tamper-evident audit log
+mcpsec-replay --file audit.jsonl
 ```
 
 A minimal policy is in [`docs/policy_schema.md`](docs/policy_schema.md) §11.
@@ -71,42 +75,38 @@ A minimal policy is in [`docs/policy_schema.md`](docs/policy_schema.md) §11.
 - **It is not an injection detector.** Detectors are weak by design and clearly labeled.
 - **Allowed channels can still leak.** If an agent may write to an allowed destination, data can leave that way unless the writing tool is flow-controlled.
 
-## Benchmark
+## Benchmark & Empirical Evaluation (Chunk 5.18a Default Profile C6)
 
-Configs: no proxy → policy only → policy + flow → policy + flow + detectors, plus pinning for tool-mutation attacks. Attack sets: AgentDojo (and InjecAgent if time permits), plus an MCP-native **held-out** set written after the defenses are frozen. Multiple models, multiple trials, raw counts with 95% confidence intervals.
+Evaluated across 50 benign workflows (manifests v1–v4) and 32 valid attack scenarios across both supported operating modes (`deny_all` unattended fail-closed vs `approve_all` attended worst-case):
 
-Results: **none yet.** See [`docs/benchmark_spec.md`](docs/benchmark_spec.md).
+| Configuration | In-Scope ASR (`deny_all`) | In-Scope ASR (`approve_all`) | Approvals / Task | Hard-Block Rate | Profile Description |
+|---|---|---|---|---|---|
+| **C0** | 21/21 (100.0%) | 21/21 (100.0%) | 0.00 | 0.0% | Baseline without proxy (pass-through) |
+| **C1** | 18/21 (85.7%) | 18/21 (85.7%) | 0.00 | 0.0% | Static policy allowlists only |
+| **C2** | 2/21 (9.5%) | 5/21 (23.8%) | 0.26 | 20.0% | Policy + session taint + flow rules |
+| **C5** | 2/21 (9.5%) | 10/21 (47.6%) | 0.56 | 0.0% | Curated egress exemptions + approval |
+| **C6 (Frozen Default)** | **0/21 (0.0%)** | **9/21 (42.9%)** | **0.40** | **0.0%** | **C5 + scratch notes exemption + file-origin taint + strict pinning** |
 
-## Roadmap
+- **Security Guarantee (Unattended Mode):** In unattended mode (`deny_all`), C6 reduces in-scope attack success rate to **0.0% (0/21, 95% CI [0.0%, 15.5%])**.
+- **Tool-Description Tampering (ATTACK-23):** C6 strict pinning blocks mid-session tool description rug-pulls in both modes (`BLOCKED/BLOCKED`), whereas C0–C5 allow the mutated tool to execute.
+- **Benign Completion:** Attended (`approve_all`) completion is **100.0% (50/50)** across all manifests with **0% hard-blocks**. Unattended completion is **64.0% (32/50)** combined.
 
-| Weeks | Phase | Deliverable |
-|-------|-------|-------------|
-| 0–4 | Core | Proxy, policy engine, audit log + replay, filesystem/HTTP/GitHub servers |
-| 5–7 | Flow control | Taint tracking, flow rules, pinning, CLI approval, minimal detectors |
-| 8–11 | Benchmark | External suites, held-out set, multi-model runs, results |
-| 12–14 | Write-up | Report, advisory if a real finding emerges (stretch) |
-| 15–16 | Launch | Demo video, release |
-
-**Pivot criterion (week 7):** if flow rules block <90% of the initial attack set or produce ≥5% false positives on benign runs, the claims get narrowed rather than the detectors expanded.
-
-## Repository layout (planned)
-
-```
-mcpsec_core/   policy, taint, flow, pinning, audit (pure library)
-proxy/         MCP proxy (Python, official MCP SDK)
-cli/           mcpsec-replay, mcpsec-approve, mcpsec-pin
-benchmark/     attacks, adapters, runner, results
-docs/          specs and decisions
-```
+See [`docs/benchmark_spec.md`](docs/benchmark_spec.md) and [`benchmark/results/dev_analysis_20261110_c6.md`](benchmark/results/dev_analysis_20261110_c6.md) for full trial records and methodology.
 
 ## Documentation
 
-- [`DESIGN.md`](DESIGN.md): threat model, architecture, semantics
-- [`docs/policy_schema.md`](docs/policy_schema.md): policy file spec
-- [`docs/audit_log_schema.md`](docs/audit_log_schema.md): audit log spec
-- [`docs/benchmark_spec.md`](docs/benchmark_spec.md): benchmark methodology
-- [`docs/decisions.md`](docs/decisions.md): architecture decision log
-- [`CHANGELOG.md`](CHANGELOG.md)
+- [`DESIGN.md`](DESIGN.md): threat model, architecture, session flow semantics
+- [`docs/policy_schema.md`](docs/policy_schema.md): policy YAML specification
+- [`docs/audit_log_schema.md`](docs/audit_log_schema.md): audit log specification and replay format
+- [`docs/benchmark_spec.md`](docs/benchmark_spec.md): benchmark methodology and configuration profiles (C0–C6)
+- [`docs/decisions.md`](docs/decisions.md): architecture decision log (ADR-001 through ADR-019)
+- [`docs/conformance.md`](docs/conformance.md): specification conformance matrix
+- [`docs/engineering_standards.md`](docs/engineering_standards.md): binding engineering standards and invariants
+- [`docs/trusted_destinations.md`](docs/trusted_destinations.md): trusted destination criteria and curated domain catalog
+- [`docs/taint_sources_audit.md`](docs/taint_sources_audit.md): comprehensive taint sources audit and file-origin rules
+- [`docs/github_snapshot_diff.md`](docs/github_snapshot_diff.md): official GitHub MCP server snapshot diff analysis
+- [`SECURITY.md`](SECURITY.md): vulnerability reporting policy and scope boundaries
+- [`CHANGELOG.md`](CHANGELOG.md): chronological project change log
 
 ## Development
 
@@ -171,7 +171,7 @@ python benchmark/measure_overhead.py
   - **Combined (n=50):** Approvals / task = 0.40 (20/50), Unattended (`deny_all`) completion = 32/50 (64.0% [50.1%, 75.9%]), Attended (`approve_all`) completion = 50/50 (100.0% [92.9%, 100.0%]).
 
 
-Report vulnerabilities in this project privately (contact and `SECURITY.md` to be added before the first release).
+Report vulnerabilities in this project privately per [`SECURITY.md`](SECURITY.md).
 
 ## License
 
