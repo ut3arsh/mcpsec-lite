@@ -198,3 +198,15 @@ Measured via `tests/test_perf.py` on a policy containing **1,000 rules across 10
    - *Deployment Modes*: Evaluated under unattended (`deny_all`, holds time out to deny) and attended (`approve_all`, worst-case fatigue bound).
    - *Flow-Rule Path Exemptions (`unless.path_allowlist`)*: Introduced `unless.path_allowlist` on write-capability flow rules. Evaluated only for tools declaring path argument adapters. All arguments must normalize canonically via `normalize_path` (NUL byte, UNC, device namespace, alternate data stream, directory traversal rejection); any parse failure fails closed and triggers the flow rule. Misconfigurations rejected with `ERR_INVALID_UNLESS_PATH`, `ERR_UNLESS_PATH_NON_WRITE`, `ERR_INVALID_PATH_PATTERN`, `ERR_INVALID_UNLESS`.
    - *Experiment E4 & ATTACK-31*: E4 evaluates scratch-path exemption `sandbox/notes/**` on `appr-untrusted-write`. ATTACK-31 evaluates cross-session persistence via scratch notes file.
+
+8. **Official `github-mcp-server v2.3.0` Alignment & Proposed Taint-Hole Rule (ADR-020, Proposed ADR-021 & Chunk 5.18d)**:
+   - *Fail-Closed Choices (ADR-020)*:
+     - Only the `46` default `stdio` tools in `tests/fixtures/github.tools.official.json` are registered in `OFFICIAL_GITHUB_TOOL_TABLE` and `_BUILTIN_ADAPTERS`; all other GitHub tools (e.g., `--toolsets all` additions, deprecated npm names, handwritten mock names) remain unknown and denied by default policy (`C7.yaml`).
+     - Remote GitHub `path` parameters (`get_file_contents`, `create_or_update_file`, `delete_file`, `add_comment_to_pending_review`, `list_commits`) set `path_args=()` (disagreement with pre-5.18d `adapters.py`'s `path_args=("path",)` on `get_file_contents`) because `extract_path_arguments` evaluates local OS paths rather than remote GitHub repo trees and `v2.3.0` makes `path` optional.
+   - *Proposed Spec Patch (`docs/policy_schema.md` §10 Rule 11 — deferred to Proposed ADR-021; NOT implemented in 5.18d because `validate_and_compile_policy` edits are out of chunk scope)*:
+     ```markdown
+     11. (Proposed ADR-021) In `mode: enforce`, if `flow_rules` reference `untrusted_content`,
+         any tool allowed under `policies` whose reviewed adapter table classification is `U`
+         and lacks an entry in `taint_sources.untrusted_content` is rejected at load time
+         (`ERR_TAINT_SOURCE_MISSING`).
+     ```

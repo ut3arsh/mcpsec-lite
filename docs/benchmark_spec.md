@@ -27,6 +27,7 @@ Results that contradict a hypothesis are reported as-is. Pivot criteria are in `
 | C4 | C2 + pinning `strict` (used for tool-mutation attacks; identical to C2 otherwise) |
 | C5 | Freeze candidate adopted from E3: Policy allowlists + session taint + flow rules with approval-based untrusted egress containment and curated domain `unless` exemptions |
 | C6 | Frozen default profile adopted from E5 + strict pinning: Restored C5 + scratch notes write path exemption + file-origin untrusted content taint sources + strict tool-description pinning (`pinning.mode: strict`). Documented ablations: C5, E4b, E5 |
+| C7 | Official `github-mcp-server v2.3.0` alignment of C6 (`ADR-020`): C6 with GitHub allowlists limited to needed official read/comment tools and `taint_sources.untrusted_content` covering all 19 `U` official GitHub tools; C0–C6 unchanged |
 
 The policy files for each config are committed in `benchmark/configs/` and referenced by hash in results.
 

@@ -223,7 +223,7 @@ JSONL, one entry per call and per approval/pin event. Full spec in `docs/audit_l
 ## 9. Benchmark plan (summary; full spec in `docs/benchmark_spec.md`)
 - **External:** AgentDojo (primary), InjecAgent (cut first if time slips). These use their own harnesses; budget ~2 weeks of adapter work via `mcpsec_core`.
 - **MCP-native, held-out:** GitHub-issue and web-page injection scenarios written **after** detector logic is frozen; never used for tuning.
-- **Configs:** baseline (C0) · policy only (C1) · policy + flow (C2) · policy + flow + detectors (C3) · strict pinning (C4) · freeze candidate (C5) · frozen default profile (C6; ablations: C5, E4b, E5).
+- **Configs:** baseline (C0) · policy only (C1) · policy + flow (C2) · policy + flow + detectors (C3) · strict pinning (C4) · freeze candidate (C5) · frozen default profile (C6; ablations: C5, E4b, E5) · official GitHub `v2.3.0` schema equivalent (C7, ADR-020).
 - **Deployment modes:** Unattended (`deny_all`) and Attended (`approve_all`).
 - **Models:** 2–3 (one open-weight), multiple trials each, report variance. Cost budget ≈ $100–200.
 - **Metrics:** attack success rate (unattended vs attended), false-positive rate on benign runs, latency overhead.
