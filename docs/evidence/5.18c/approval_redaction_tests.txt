@@ -1,0 +1,27 @@
+﻿============================= test session starts =============================
+platform win32 -- Python 3.14.4, pytest-9.1.1, pluggy-1.6.0 -- C:\Users\BIT PATNA\AppData\Local\Programs\Python\Python314\python.exe
+cachedir: .pytest_cache
+hypothesis profile 'dev' -> deadline=None, max_examples=50, suppress_health_check=(HealthCheck.too_slow,)
+rootdir: C:\Users\BIT PATNA\ai-agent-firewall
+configfile: pyproject.toml
+plugins: anyio-4.15.1, hypothesis-6.168.5, platformdirs-4.13.0, asyncio-1.4.0, cov-7.1.0, timeout-2.4.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+timeout: 30.0s
+timeout method: thread
+timeout func_only: False
+collecting ... collected 12 items
+
+tests/test_approvals.py::test_approval_lifecycle_and_idempotence PASSED  [  8%]
+tests/test_approvals.py::test_deny_and_timeout_lifecycle PASSED          [ 16%]
+tests/test_approvals.py::test_taint_clearance_validation PASSED          [ 25%]
+tests/test_approvals.py::test_concurrent_writers_append_only_log PASSED  [ 33%]
+tests/test_approvals.py::test_approval_manager_multiprocess_concurrency PASSED [ 41%]
+tests/test_approvals.py::test_crash_recovery_rebuilds_state PASSED       [ 50%]
+tests/test_approvals.py::test_cli_commands PASSED                        [ 58%]
+tests/test_approvals.py::test_proxy_session_require_approval_flow PASSED [ 66%]
+tests/test_approvals.py::test_approval_manager_sync_handles_blank_and_corrupt_lines PASSED [ 75%]
+tests/test_approvals.py::test_approve_cli_list_display_and_secret_redaction PASSED [ 83%]
+tests/test_approvals.py::test_approve_cli_prompt_sanitization_and_hardening PASSED [ 91%]
+tests/test_approvals.py::test_approve_cli_url_query_parameter_redaction_every_prompt_line PASSED [100%]
+
+============================= 12 passed in 7.41s ==============================

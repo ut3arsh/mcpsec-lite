@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 import unicodedata
 import urllib.parse
@@ -19,7 +20,22 @@ from pathlib import Path
 from typing import Any
 
 from mcpsec_core.approvals import DEFAULT_CLI_LOCK_TIMEOUT_SECONDS, ApprovalManager
-from mcpsec_core.audit import Redactor
+from mcpsec_core.audit import DEFAULT_NEVER_LOG_FIELDS, Redactor
+
+SENSITIVE_URL_QUERY_PARAMS: frozenset[str] = frozenset(
+    {
+        *(f.lower() for f in DEFAULT_NEVER_LOG_FIELDS),
+        "token",
+        "key",
+        "secret",
+        "password",
+        "authorization",
+        "api_key",
+        "sig",
+    }
+)
+_URL_EMBEDDED_QUERY_RE = re.compile(r"\?[^#\s\"'<>]+")
+_URL_WHOLE_QUERY_RE = re.compile(r"\?[^#]+")
 
 
 def resolve_audit_log_path(explicit_path: Path | None, approvals_log_path: Path) -> Path | None:
@@ -83,10 +99,65 @@ def sanitize_display_value(val: Any, max_length: int = 160) -> Any:
     return val
 
 
-def load_taint_sources_from_audit(audit_log_path: Path | None) -> dict[str, dict[str, list[str]]]:
-    """Parse audit log to map session_id -> {taint_label: [source_tool_ids_with_destination]}."""
+def _redact_query_segment(query_with_prefix: str) -> str:
+    """Redact sensitive query parameters inside '?...' using existing '[REDACTED]' replacement."""
+    if not query_with_prefix.startswith("?"):
+        return query_with_prefix
+    parts = query_with_prefix[1:].split("&")
+    redacted_parts: list[str] = []
+    for part in parts:
+        if "=" in part:
+            k, _sep, v = part.partition("=")
+            norm_k = urllib.parse.unquote(k).strip().lower()
+            if norm_k in SENSITIVE_URL_QUERY_PARAMS:
+                redacted_parts.append(f"{k}=[REDACTED]")
+            else:
+                redacted_parts.append(f"{k}={v}")
+        else:
+            redacted_parts.append(part)
+    return "?" + "&".join(redacted_parts)
+
+
+def redact_url_query_params(text: str, *, whole_url: bool = False) -> str:
+    """Redact sensitive URL query parameter values (token, key, secret, password, authorization, api_key, sig)."""
+    if not text or "?" not in text:
+        return text
+    pattern = _URL_WHOLE_QUERY_RE if whole_url else _URL_EMBEDDED_QUERY_RE
+    return pattern.sub(lambda m: _redact_query_segment(m.group(0)), text)
+
+
+def redact_prompt_text(text: str, redactor: Redactor, *, whole_url: bool = False) -> str:
+    """Apply Redactor text rules and URL query-parameter redaction to a prompt string."""
+    redacted = redactor.redact_text(text)
+    is_url = whole_url or redacted.lstrip().lower().startswith(("http://", "https://"))
+    return redact_url_query_params(redacted, whole_url=is_url)
+
+
+def redact_prompt_args(args: Any, redactor: Redactor) -> Any:
+    """Apply existing Redactor rules and URL query-parameter redaction recursively to arguments."""
+    redacted = redactor.redact_args(args)
+
+    def _walk(val: Any, key_name: str = "") -> Any:
+        if isinstance(val, dict):
+            return {k: _walk(v, str(k)) for k, v in val.items()}
+        if isinstance(val, list):
+            return [_walk(item, key_name) for item in val]
+        if isinstance(val, str):
+            is_url_key = key_name.lower() in ("url", "uri", "endpoint", "target")
+            return redact_prompt_text(val, redactor, whole_url=is_url_key)
+        return val
+
+    return _walk(redacted)
+
+
+def load_taint_sources_from_audit(
+    audit_log_path: Path | None,
+    redactor: Redactor | None = None,
+) -> dict[str, dict[str, list[str]]]:
+    """Parse audit log to map session_id -> {taint_label: [source_tool_ids_with_redacted_destination]}."""
     if audit_log_path is None or not audit_log_path.exists():
         return {}
+    active_redactor = redactor if redactor is not None else Redactor(mode="redacted")
     sources_by_session: dict[str, dict[str, list[str]]] = {}
     try:
         with open(audit_log_path, encoding="utf-8") as f:
@@ -110,7 +181,7 @@ def load_taint_sources_from_audit(audit_log_path: Path | None) -> dict[str, dict
                     srv = data.get("server", "")
                     tool = data.get("tool", "")
                     tool_id = f"{srv}.{tool}" if srv else tool
-                    args = data.get("args") or {}
+                    args = redact_prompt_args(data.get("args") or {}, active_redactor)
                     dest_info = ""
                     if isinstance(args, dict):
                         if "url" in args and args["url"]:
@@ -254,29 +325,34 @@ def main(argv: list[str] | None = None) -> int:
         pending = [a for a in approvals.values() if a.status == "pending"]
         redactor = Redactor(mode="redacted")
         audit_path = resolve_audit_log_path(args.audit_log, args.log)
-        audit_sources = load_taint_sources_from_audit(audit_path)
+        audit_sources = load_taint_sources_from_audit(audit_path, redactor=redactor)
 
         if getattr(args, "json", False):
-            out_list = [
-                {
-                    "call_id": a.call_id,
-                    "session_id": a.session_id,
-                    "agent_id": a.agent_id,
-                    "tool": f"{a.server}.{a.tool}",
-                    "args": redactor.redact_args(a.args),
-                    "destination": extract_destination(a.args),
-                    "capabilities": a.capabilities,
-                    "taint_state": a.taint_state,
-                    "taint_sources": {
-                        label: audit_sources.get(a.session_id, {}).get(label, [])
-                        for label in a.taint_state
-                    },
-                    "rule_id": a.rule_id,
-                    "created_at": a.created_at,
-                    "expires_at": a.expires_at,
-                }
-                for a in pending
-            ]
+            out_list = []
+            for a in pending:
+                redacted_args = redact_prompt_args(a.args, redactor)
+                out_list.append(
+                    {
+                        "call_id": a.call_id,
+                        "session_id": a.session_id,
+                        "agent_id": a.agent_id,
+                        "tool": f"{a.server}.{a.tool}",
+                        "args": redacted_args,
+                        "destination": extract_destination(redacted_args),
+                        "capabilities": a.capabilities,
+                        "taint_state": a.taint_state,
+                        "taint_sources": {
+                            label: [
+                                redact_prompt_text(s, redactor)
+                                for s in audit_sources.get(a.session_id, {}).get(label, [])
+                            ]
+                            for label in a.taint_state
+                        },
+                        "rule_id": a.rule_id,
+                        "created_at": a.created_at,
+                        "expires_at": a.expires_at,
+                    }
+                )
             print(json.dumps(out_list, indent=2))
         else:
             if not pending:
@@ -284,9 +360,9 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 print(f"Pending approval requests ({len(pending)}):")
                 for a in pending:
-                    dest = extract_destination(a.args)
-                    dest_sanitized = sanitize_untrusted_text(dest)
-                    redacted_args = redactor.redact_args(a.args)
+                    redacted_args = redact_prompt_args(a.args, redactor)
+                    dest = extract_destination(redacted_args)
+                    dest_sanitized = sanitize_untrusted_text(redact_prompt_text(dest, redactor))
                     display_args = sanitize_display_value(redacted_args)
                     age_str, time_left_str = compute_timing(a.created_at, a.expires_at)
                     sess_sources = audit_sources.get(a.session_id, {})
@@ -294,42 +370,57 @@ def main(argv: list[str] | None = None) -> int:
                     for label in a.taint_state:
                         srcs = sess_sources.get(label)
                         if srcs:
-                            sanitized_srcs = [sanitize_untrusted_text(s) for s in srcs]
+                            sanitized_srcs = [
+                                sanitize_untrusted_text(redact_prompt_text(s, redactor))
+                                for s in srcs
+                            ]
                             taint_items.append(f"{label} (via {', '.join(sanitized_srcs)})")
                         else:
                             taint_items.append(label)
                     taint_display = ", ".join(taint_items) if taint_items else "none"
 
-                    print(f"  [{sanitize_untrusted_text(a.call_id)}]")
-                    print(f"    Session:      {sanitize_untrusted_text(a.session_id)}")
-                    print(f"    Tool:         {sanitize_untrusted_text(f'{a.server}.{a.tool}')}")
+                    print(f"  [{sanitize_untrusted_text(redact_prompt_text(a.call_id, redactor))}]")
+                    print(
+                        f"    Session:      {sanitize_untrusted_text(redact_prompt_text(a.session_id, redactor))}"
+                    )
+                    print(
+                        f"    Tool:         {sanitize_untrusted_text(redact_prompt_text(f'{a.server}.{a.tool}', redactor))}"
+                    )
                     print(f"    Destination:  {dest_sanitized}")
-                    print(f"    Rule ID:      {sanitize_untrusted_text(a.rule_id)}")
+                    print(
+                        f"    Rule ID:      {sanitize_untrusted_text(redact_prompt_text(a.rule_id, redactor))}"
+                    )
                     print(f"    Taint:        {taint_display}")
                     print(f"    Timing:       age: {age_str}, time left: {time_left_str}")
                     print(f"    Args:         {json.dumps(display_args)}")
         return 0
 
     elif args.command == "approve":
+        redactor = Redactor(mode="redacted")
         ok = manager.approve(args.call_id, operator=args.operator, reason=args.reason)
         if ok:
-            print(f"Call '{sanitize_untrusted_text(args.call_id)}' approved successfully.")
+            print(
+                f"Call '{sanitize_untrusted_text(redact_prompt_text(args.call_id, redactor))}' approved successfully."
+            )
             return 0
         else:
             print(
-                f"Error: Call '{sanitize_untrusted_text(args.call_id)}' not found or already in terminal state.",
+                f"Error: Call '{sanitize_untrusted_text(redact_prompt_text(args.call_id, redactor))}' not found or already in terminal state.",
                 file=sys.stderr,
             )
             return 1
 
     elif args.command == "deny":
+        redactor = Redactor(mode="redacted")
         ok = manager.deny(args.call_id, operator=args.operator, reason=args.reason)
         if ok:
-            print(f"Call '{sanitize_untrusted_text(args.call_id)}' denied successfully.")
+            print(
+                f"Call '{sanitize_untrusted_text(redact_prompt_text(args.call_id, redactor))}' denied successfully."
+            )
             return 0
         else:
             print(
-                f"Error: Call '{sanitize_untrusted_text(args.call_id)}' not found or already in terminal state.",
+                f"Error: Call '{sanitize_untrusted_text(redact_prompt_text(args.call_id, redactor))}' not found or already in terminal state.",
                 file=sys.stderr,
             )
             return 1
