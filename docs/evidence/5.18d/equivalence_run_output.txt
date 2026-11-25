@@ -1,0 +1,1 @@
+﻿Equivalence check complete: output=docs\evidence\5.18d\equivalence_c6_vs_c7.md, mismatches=0

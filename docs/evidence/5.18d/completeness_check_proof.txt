@@ -1,0 +1,4 @@
+MISSING_ROW_RC=1
+TrialCompletenessError: Missing 1 required trial(s): (BENIGN-50, C7, approve_all)
+DUPLICATE_ROW_RC=1
+TrialCompletenessError: Duplicated 1 trial tuple(s): (BENIGN-50, C7, approve_all) x2
