@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "source_snapshot": "tests/fixtures/github.tools.official.json",
+  "snapshot_version": "2.3.0",
+  "snapshot_commit": "c6b62954c062b3ad779f4e208716e09cb4a723e0",
+  "notes": "Pre-registered deterministic mapping from handwritten benchmark mock GitHub tools/args to official github/github-mcp-server v2.3.0 tools/args.",
+  "tools": {
+    "get_issue": {
+      "official_tool": "issue_read",
+      "arg_map": {
+        "owner": "owner",
+        "repo": "repo",
+        "issue_number": "issue_number"
+      },
+      "fixed_args": {
+        "method": "get"
+      }
+    },
+    "get_pull_request": {
+      "official_tool": "pull_request_read",
+      "arg_map": {
+        "owner": "owner",
+        "repo": "repo",
+        "pull_number": "pullNumber"
+      },
+      "fixed_args": {
+        "method": "get"
+      }
+    },
+    "create_issue_comment": {
+      "official_tool": "add_issue_comment",
+      "arg_map": {
+        "owner": "owner",
+        "repo": "repo",
+        "issue_number": "issue_number",
+        "body": "body"
+      },
+      "fixed_args": {}
+    },
+    "get_file_contents": {
+      "official_tool": "get_file_contents",
+      "arg_map": {
+        "owner": "owner",
+        "repo": "repo",
+        "path": "path",
+        "ref": "ref"
+      },
+      "fixed_args": {}
+    },
+    "list_issues": {
+      "official_tool": "list_issues",
+      "arg_map": {
+        "owner": "owner",
+        "repo": "repo",
+        "state": "state",
+        "labels": "labels",
+        "sort": "orderBy",
+        "direction": "direction",
+        "since": "since",
+        "per_page": "perPage"
+      },
+      "fixed_args": {}
+    },
+    "list_pull_requests": {
+      "official_tool": "list_pull_requests",
+      "arg_map": {
+        "owner": "owner",
+        "repo": "repo",
+        "state": "state",
+        "head": "head",
+        "base": "base",
+        "sort": "sort",
+        "direction": "direction",
+        "page": "page",
+        "per_page": "perPage"
+      },
+      "fixed_args": {}
+    },
+    "search_repositories": {
+      "official_tool": "search_repositories",
+      "arg_map": {
+        "query": "query",
+        "page": "page",
+        "per_page": "perPage"
+      },
+      "fixed_args": {}
+    },
+    "search_code": {
+      "official_tool": "search_code",
+      "arg_map": {
+        "q": "query",
+        "sort": "sort",
+        "order": "order",
+        "page": "page",
+        "per_page": "perPage"
+      },
+      "fixed_args": {}
+    },
+    "search_issues": {
+      "official_tool": "search_issues",
+      "arg_map": {
+        "q": "query",
+        "sort": "sort",
+        "order": "order",
+        "page": "page",
+        "per_page": "perPage"
+      },
+      "fixed_args": {}
+    }
+  }
+}

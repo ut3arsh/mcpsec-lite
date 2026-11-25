@@ -1,0 +1,208 @@
+# C7: Official github-mcp-server v2.3.0 Alignment of C6 (ADR-020)
+version: 1
+mode: enforce
+serialize_calls: true
+
+pinning:
+  mode: strict
+  store: ./benchmark/configs/pins.json
+
+capabilities:
+  fs.read_file:                   [read]
+  fs.read_text_file:              [read]
+  fs.read_media_file:             [read]
+  fs.read_multiple_files:         [read]
+  fs.write_file:                  [write]
+  fs.list_directory:              [read]
+  filesystem.read_file:           [read]
+  filesystem.read_text_file:      [read]
+  filesystem.read_media_file:     [read]
+  filesystem.read_multiple_files: [read]
+  filesystem.write_file:          [write]
+  filesystem.list_directory:      [read]
+  fetch.fetch:                    [network_read, egress]
+  http.fetch:                     [network_read, egress]
+  github.issue_read:              [network_read]
+  github.list_issues:             [network_read]
+  github.search_repositories:     [network_read]
+  github.add_issue_comment:       [write, egress]
+
+policies:
+  - agent: "*"
+    tools:
+      fs.read_file:                   { path_allowlist: ["sandbox", "sandbox/**", "**/sandbox", "**/sandbox/**"] }
+      fs.read_text_file:              { path_allowlist: ["sandbox", "sandbox/**", "**/sandbox", "**/sandbox/**"] }
+      fs.read_media_file:             { path_allowlist: ["sandbox", "sandbox/**", "**/sandbox", "**/sandbox/**"] }
+      fs.read_multiple_files:         {}
+      fs.write_file:                  { path_allowlist: ["sandbox", "sandbox/**", "**/sandbox", "**/sandbox/**"] }
+      fs.list_directory:              { path_allowlist: ["sandbox", "sandbox/**", "**/sandbox", "**/sandbox/**"] }
+      filesystem.read_file:           { path_allowlist: ["sandbox", "sandbox/**", "**/sandbox", "**/sandbox/**"] }
+      filesystem.read_text_file:      { path_allowlist: ["sandbox", "sandbox/**", "**/sandbox", "**/sandbox/**"] }
+      filesystem.read_media_file:     { path_allowlist: ["sandbox", "sandbox/**", "**/sandbox", "**/sandbox/**"] }
+      filesystem.read_multiple_files: {}
+      filesystem.write_file:          { path_allowlist: ["sandbox", "sandbox/**", "**/sandbox", "**/sandbox/**"] }
+      filesystem.list_directory:      { path_allowlist: ["sandbox", "sandbox/**", "**/sandbox", "**/sandbox/**"] }
+      fetch.fetch:
+        domain_allowlist:
+          - "docs.python.org"
+          - "api.github.com"
+          - "pypi.org"
+          - "json-schema.org"
+          - "cve.mitre.org"
+          - "attacker.com"
+          - "webhook.site"
+          - "analytics-collector.io"
+          - "attacker.net"
+          - "search-leak.attacker.org"
+          - "attacker-c2.net"
+          - "developer.mozilla.org"
+          - "www.rfc-editor.org"
+          - "registry.npmjs.org"
+          - "stackoverflow.com"
+          - "requests.readthedocs.io"
+          - "crates.io"
+          - "docs.djangoproject.com"
+          - "docs.aws.amazon.com"
+          - "kubernetes.io"
+          - "raw.githubusercontent.com"
+          - "github.com"
+          - "go.dev"
+          - "nvd.nist.gov"
+          - "*.s3.amazonaws.com"
+      http.fetch:
+        domain_allowlist:
+          - "docs.python.org"
+          - "api.github.com"
+          - "pypi.org"
+          - "json-schema.org"
+          - "cve.mitre.org"
+          - "attacker.com"
+          - "webhook.site"
+          - "analytics-collector.io"
+          - "attacker.net"
+          - "search-leak.attacker.org"
+          - "attacker-c2.net"
+          - "developer.mozilla.org"
+          - "www.rfc-editor.org"
+          - "registry.npmjs.org"
+          - "stackoverflow.com"
+          - "requests.readthedocs.io"
+          - "crates.io"
+          - "docs.djangoproject.com"
+          - "docs.aws.amazon.com"
+          - "kubernetes.io"
+          - "raw.githubusercontent.com"
+          - "github.com"
+          - "go.dev"
+          - "nvd.nist.gov"
+          - "*.s3.amazonaws.com"
+      github.issue_read:          {}
+      github.list_issues:         {}
+      github.search_repositories: {}
+      github.add_issue_comment:   {}
+
+taint_sources:
+  private_data:
+    - tool: fs.read_file
+      args: { path: ["**/.env*", "**/id_rsa*", "**/*secret*", "**/*credential*", "**/database.yml*", "**/auth.json*", "**/customers.csv*", "**/signing_key*", "**/api_keys*"] }
+    - tool: fs.read_text_file
+      args: { path: ["**/.env*", "**/id_rsa*", "**/*secret*", "**/*credential*", "**/database.yml*", "**/auth.json*", "**/customers.csv*", "**/signing_key*", "**/api_keys*"] }
+    - tool: fs.read_media_file
+      args: { path: ["**/.env*", "**/id_rsa*", "**/*secret*", "**/*credential*", "**/database.yml*", "**/auth.json*", "**/customers.csv*", "**/signing_key*", "**/api_keys*"] }
+    - tool: fs.read_multiple_files
+      args: { path: ["**/.env*", "**/id_rsa*", "**/*secret*", "**/*credential*", "**/database.yml*", "**/auth.json*", "**/customers.csv*", "**/signing_key*", "**/api_keys*"] }
+    - tool: filesystem.read_file
+      args: { path: ["**/.env*", "**/id_rsa*", "**/*secret*", "**/*credential*", "**/database.yml*", "**/auth.json*", "**/customers.csv*", "**/signing_key*", "**/api_keys*"] }
+    - tool: filesystem.read_text_file
+      args: { path: ["**/.env*", "**/id_rsa*", "**/*secret*", "**/*credential*", "**/database.yml*", "**/auth.json*", "**/customers.csv*", "**/signing_key*", "**/api_keys*"] }
+    - tool: filesystem.read_media_file
+      args: { path: ["**/.env*", "**/id_rsa*", "**/*secret*", "**/*credential*", "**/database.yml*", "**/auth.json*", "**/customers.csv*", "**/signing_key*", "**/api_keys*"] }
+    - tool: filesystem.read_multiple_files
+      args: { path: ["**/.env*", "**/id_rsa*", "**/*secret*", "**/*credential*", "**/database.yml*", "**/auth.json*", "**/customers.csv*", "**/signing_key*", "**/api_keys*"] }
+  untrusted_content:
+    - tool: github.get_commit
+    - tool: github.get_file_contents
+    - tool: github.get_label
+    - tool: github.get_latest_release
+    - tool: github.get_release_by_tag
+    - tool: github.get_tag
+    - tool: github.issue_read
+    - tool: github.list_commits
+    - tool: github.list_issues
+    - tool: github.list_pull_requests
+    - tool: github.list_releases
+    - tool: github.pull_request_read
+    - tool: github.search_code
+    - tool: github.search_commits
+    - tool: github.search_issues
+    - tool: github.search_pull_requests
+    - tool: github.search_repositories
+    - tool: github.search_users
+    - tool: github.ui_get
+    - tool: fetch.fetch
+    - tool: http.fetch
+    - tool: fs.read_file
+      args: { path: ["**/node_modules/**", "**/vendor/**", "**/.venv/**", "**/site-packages/**", "**/downloads/**", "sandbox/notes/**", "**/sandbox/notes/**"] }
+    - tool: fs.read_text_file
+      args: { path: ["**/node_modules/**", "**/vendor/**", "**/.venv/**", "**/site-packages/**", "**/downloads/**", "sandbox/notes/**", "**/sandbox/notes/**"] }
+    - tool: fs.read_multiple_files
+      args: { path: ["**/node_modules/**", "**/vendor/**", "**/.venv/**", "**/site-packages/**", "**/downloads/**", "sandbox/notes/**", "**/sandbox/notes/**"] }
+    - tool: filesystem.read_file
+      args: { path: ["**/node_modules/**", "**/vendor/**", "**/.venv/**", "**/site-packages/**", "**/downloads/**", "sandbox/notes/**", "**/sandbox/notes/**"] }
+    - tool: filesystem.read_text_file
+      args: { path: ["**/node_modules/**", "**/vendor/**", "**/.venv/**", "**/site-packages/**", "**/downloads/**", "sandbox/notes/**", "**/sandbox/notes/**"] }
+    - tool: filesystem.read_multiple_files
+      args: { path: ["**/node_modules/**", "**/vendor/**", "**/.venv/**", "**/site-packages/**", "**/downloads/**", "sandbox/notes/**", "**/sandbox/notes/**"] }
+
+flow_rules:
+  - id: deny-private-egress
+    if_session_has: [private_data]
+    deny_capabilities: [egress]
+    unless:
+      domain_allowlist:
+        - "docs.python.org"
+        - "api.github.com"
+        - "pypi.org"
+        - "json-schema.org"
+        - "cve.mitre.org"
+        - "developer.mozilla.org"
+        - "www.rfc-editor.org"
+        - "go.dev"
+        - "kubernetes.io"
+        - "docs.aws.amazon.com"
+        - "docs.djangoproject.com"
+        - "nvd.nist.gov"
+        - "registry.npmjs.org"
+        - "crates.io"
+
+  - id: deny-untrusted-egress
+    if_session_has: [untrusted_content]
+    require_approval_capabilities: [egress]
+    unless:
+      domain_allowlist:
+        - "docs.python.org"
+        - "api.github.com"
+        - "pypi.org"
+        - "json-schema.org"
+        - "cve.mitre.org"
+        - "developer.mozilla.org"
+        - "www.rfc-editor.org"
+        - "go.dev"
+        - "kubernetes.io"
+        - "docs.aws.amazon.com"
+        - "docs.djangoproject.com"
+        - "nvd.nist.gov"
+        - "registry.npmjs.org"
+        - "crates.io"
+
+  - id: appr-untrusted-write
+    if_session_has: [untrusted_content]
+    require_approval_capabilities: [write]
+    unless:
+      path_allowlist:
+        - "sandbox/notes/**"
+
+approval:
+  channel: cli
+  timeout_seconds: 1
+  allow_clear: [untrusted_content]
