@@ -1,5 +1,7 @@
 {
-  "source": "handwritten schema fixture based on official GitHub MCP specification (Docker / remote runtime unavailable locally on Windows host)",
+  "role": "benchmark mock",
+  "purpose": "benchmark mock — synthetic schema used by fake_github for dev C0-C6 runs",
+  "source": "handwritten schema fixture (benchmark mock) for scripted fake_github dev server",
   "server_version": "UNVERIFIED-handwritten",
   "captured_at": "2026-10-09T18:30:00Z",
   "verified": false,

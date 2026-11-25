@@ -1,0 +1,51 @@
+﻿============================= test session starts =============================
+platform win32 -- Python 3.14.4, pytest-9.1.1, pluggy-1.6.0 -- C:\Users\BIT PATNA\AppData\Local\Programs\Python\Python314\python.exe
+cachedir: .pytest_cache
+hypothesis profile 'dev' -> deadline=None, max_examples=50, suppress_health_check=(HealthCheck.too_slow,)
+rootdir: C:\Users\BIT PATNA\ai-agent-firewall
+configfile: pyproject.toml
+plugins: anyio-4.15.1, hypothesis-6.168.5, platformdirs-4.13.0, asyncio-1.4.0, cov-7.1.0, timeout-2.4.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+timeout: 30.0s
+timeout method: thread
+timeout func_only: False
+collecting ... collected 38 items / 2 deselected / 36 selected
+
+tests/test_contract.py::test_filesystem_adapter_conformance_with_snapshot PASSED [  2%]
+tests/test_contract.py::test_fetch_adapter_conformance_with_snapshot PASSED [  5%]
+tests/test_contract.py::test_github_handwritten_fixture_labeled_benchmark_mock PASSED [  8%]
+tests/test_contract.py::test_github_official_adapter_and_table_conformance_with_snapshot PASSED [ 11%]
+tests/test_adapters.py::test_builtin_adapters_registry PASSED            [ 13%]
+tests/test_adapters.py::test_extract_path_arguments_valid PASSED         [ 16%]
+tests/test_adapters.py::test_extract_path_arguments_fail_closed PASSED   [ 19%]
+tests/test_adapters.py::test_validate_unexpected_arguments_strict PASSED [ 22%]
+tests/test_adapters.py::test_extract_domain_arguments_valid PASSED       [ 25%]
+tests/test_adapters.py::test_extract_domain_arguments_fail_closed PASSED [ 27%]
+tests/test_adapters.py::test_validate_tool_adapter_rule8 PASSED          [ 30%]
+tests/test_adapters.py::test_tool_name_encoding_and_decoding_basic PASSED [ 33%]
+tests/test_adapters.py::test_tool_name_encoding_validations PASSED       [ 36%]
+tests/test_adapters.py::test_tool_name_decoding_validations PASSED       [ 38%]
+tests/test_adapters.py::test_hypothesis_tool_name_roundtrip_property PASSED [ 41%]
+tests/test_policy.py::test_valid_minimal_policy_loads_cleanly PASSED     [ 44%]
+tests/test_policy.py::test_load_policy_file_and_text_split PASSED        [ 47%]
+tests/test_policy.py::test_load_policy_text_never_treats_path_like_string_as_file PASSED [ 50%]
+tests/test_policy.py::test_load_policy_file_never_treats_yaml_text_as_file PASSED [ 52%]
+tests/test_policy.py::test_policy_load_idempotent PASSED                 [ 55%]
+tests/test_policy.py::test_get_tool_capabilities PASSED                  [ 58%]
+tests/test_policy.py::test_non_dict_yaml_rejected PASSED                 [ 61%]
+tests/test_policy.py::test_rule1_invalid_or_missing_version PASSED       [ 63%]
+tests/test_policy.py::test_rule2_unknown_key_rejected PASSED             [ 66%]
+tests/test_policy.py::test_rule3_capabilities_tag_outside_closed_set PASSED [ 69%]
+tests/test_policy.py::test_rule4_unknown_taint_label_or_tag PASSED       [ 72%]
+tests/test_policy.py::test_rule5_duplicate_flow_rule_id PASSED           [ 75%]
+tests/test_policy.py::test_rule6_flow_rule_invalid_capabilities PASSED   [ 77%]
+tests/test_policy.py::test_rule7_tool_in_policies_has_no_capabilities PASSED [ 80%]
+tests/test_policy.py::test_rule8_constraint_on_tool_with_no_adapter PASSED [ 83%]
+tests/test_policy.py::test_rule9_invalid_glob_syntax PASSED              [ 86%]
+tests/test_policy.py::test_unless_exemption_validation_rules PASSED      [ 88%]
+tests/test_policy.py::test_warnings_generated PASSED                     [ 91%]
+tests/test_policy.py::test_check_policy_default_deny PASSED              [ 94%]
+tests/test_policy.py::test_check_policy_path_and_domain_allowlists PASSED [ 97%]
+tests/test_policy.py::test_path_allowlist_directory_root_and_glob_distinction PASSED [100%]
+
+====================== 36 passed, 2 deselected in 5.61s =======================
