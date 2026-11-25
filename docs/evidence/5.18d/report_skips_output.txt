@@ -1,0 +1,21 @@
+﻿#### Verified Skip / XFail Report (`docs/evidence/5.18d/pytest_plain_rsx.txt`)
+
+- **Verified Total:** 3 (`SKIPPED`: 1, `XFAIL`: 2, `XPASS`: 0)
+
+| Outcome | Verified Test ID (`nodeid`) | Source Location | Reason |
+|---|---|---|---|
+| `SKIPPED` | `tests/test_matching.py::test_path_symlink_escape_resolution` | `tests/test_matching.py:104` | Symlink creation not supported without elevation on Windows |
+| `XFAIL` | `tests/test_known_gaps.py::test_known_gap_http_redirect_ssrf_bypass` | `tests/test_known_gaps.py::test_known_gap_http_redirect_ssrf_bypass` | Known Gap: HTTP redirect bypass. Policy evaluates initial URL domain; upstream HTTP client follows redirects to non-allowlisted internal IPs (addressed in egress filtering / Week 6). |
+| `XFAIL` | `tests/test_known_gaps.py::test_known_gap_filesystem_symlink_toctou` | `tests/test_known_gaps.py::test_known_gap_filesystem_symlink_toctou` | Known Gap: Path TOCTOU. Symlink or directory swap between policy validation and upstream server filesystem read (addressed via file descriptor pinning / kernel namespace isolation). |
+
+#### Verified Skip / XFail Report (`docs/evidence/5.18d/pytest_full_rsx.txt`)
+
+- **Verified Total:** 5 (`SKIPPED`: 3, `XFAIL`: 2, `XPASS`: 0)
+
+| Outcome | Verified Test ID (`nodeid`) | Source Location | Reason |
+|---|---|---|---|
+| `SKIPPED` | `tests/test_contract.py::test_live_filesystem_contract_vs_snapshot` | `tests/test_contract.py:234` | Opt-in live contract test (set RUN_LIVE_CONTRACT_TESTS=1) |
+| `SKIPPED` | `tests/test_contract.py::test_live_fetch_contract_vs_snapshot` | `tests/test_contract.py:262` | Opt-in live contract test (set RUN_LIVE_CONTRACT_TESTS=1) |
+| `SKIPPED` | `tests/test_matching.py::test_path_symlink_escape_resolution` | `tests/test_matching.py:104` | Symlink creation not supported without elevation on Windows |
+| `XFAIL` | `tests/test_known_gaps.py::test_known_gap_http_redirect_ssrf_bypass` | `tests/test_known_gaps.py::test_known_gap_http_redirect_ssrf_bypass` | Known Gap: HTTP redirect bypass. Policy evaluates initial URL domain; upstream HTTP client follows redirects to non-allowlisted internal IPs (addressed in egress filtering / Week 6). |
+| `XFAIL` | `tests/test_known_gaps.py::test_known_gap_filesystem_symlink_toctou` | `tests/test_known_gaps.py::test_known_gap_filesystem_symlink_toctou` | Known Gap: Path TOCTOU. Symlink or directory swap between policy validation and upstream server filesystem read (addressed via file descriptor pinning / kernel namespace isolation). |
