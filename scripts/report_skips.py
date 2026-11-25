@@ -28,15 +28,9 @@ class SkipValidationError(ValueError):
     """Raised when a reported skipped/xfailed test ID cannot be verified against pytest collection."""
 
 
-_SKIP_LINE_RE = re.compile(
-    r"^(SKIPPED)\s+\[(\d+)\]\s+(.+?):(\d+):\s*(.*)$"
-)
-_XFAIL_LINE_RE = re.compile(
-    r"^(XFAIL|XPASS|SKIPPED)\s+([^\s]+::[^\s]+?)\s*(?:-\s*(.*))?$"
-)
-_MD_TABLE_ROW_RE = re.compile(
-    r"^\|\s*`([^`]+)`\s*\|\s*`([^`]+)`\s*\|\s*(.*?)\s*\|$"
-)
+_SKIP_LINE_RE = re.compile(r"^(SKIPPED)\s+\[(\d+)\]\s+(.+?):(\d+):\s*(.*)$")
+_XFAIL_LINE_RE = re.compile(r"^(XFAIL|XPASS|SKIPPED)\s+([^\s]+::[^\s]+?)\s*(?:-\s*(.*))?$")
+_MD_TABLE_ROW_RE = re.compile(r"^\|\s*`([^`]+)`\s*\|\s*`([^`]+)`\s*\|\s*(.*?)\s*\|$")
 
 
 def read_text_auto_encoding(path: Path) -> str:
@@ -140,9 +134,7 @@ def _validate_nodeid_in_collection(nodeid: str, valid_nodeids: set[str]) -> str:
         for cid in sorted(valid_nodeids):
             if cid.startswith(prefix):
                 return norm
-    raise SkipValidationError(
-        f"Test ID '{norm}' is ABSENT from pytest --collect-only -q output"
-    )
+    raise SkipValidationError(f"Test ID '{norm}' is ABSENT from pytest --collect-only -q output")
 
 
 def parse_rsx_text(

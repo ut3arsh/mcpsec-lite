@@ -90,4 +90,6 @@ def test_readme_approvals_per_task_and_scope_match_generated_report() -> None:
     assert "default profile c6 (candidate, owner has not tagged)" in lowered
     assert "fake github server" in lowered
     assert "verified" not in lowered, "README must not claim 'verified'"
-    assert "frozen" not in lowered, "README must use 'candidate, owner has not tagged' rather than 'frozen'"
+    assert "frozen" not in lowered, (
+        "README must use 'candidate, owner has not tagged' rather than 'frozen'"
+    )

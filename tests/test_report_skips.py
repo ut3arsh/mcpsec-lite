@@ -8,9 +8,11 @@ import pytest
 
 from scripts.report_skips import (
     SkipValidationError,
-    main as report_skips_main,
     parse_collected_nodeids,
     parse_rsx_text,
+)
+from scripts.report_skips import (
+    main as report_skips_main,
 )
 
 SAMPLE_COLLECT_OUTPUT = """tests/test_contract.py::test_filesystem_adapter_conformance_with_snapshot
@@ -36,13 +38,17 @@ def test_parse_valid_rsx_output_and_generate_table() -> None:
     )
     entries = parse_rsx_text(rsx_text, valid_ids)
     assert len(entries) == 4
-    assert entries[0].nodeid == "tests/test_contract.py::test_github_adapter_conformance_with_snapshot"
+    assert (
+        entries[0].nodeid == "tests/test_contract.py::test_github_adapter_conformance_with_snapshot"
+    )
     assert entries[1].nodeid == "tests/test_matching.py::test_path_symlink_escape_resolution"
     assert entries[2].outcome == "XFAIL"
     assert entries[2].nodeid == "tests/test_known_gaps.py::test_known_gap_http_redirect_ssrf_bypass"
 
 
-def test_fake_injected_test_name_fails_closed(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_fake_injected_test_name_fails_closed(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     """Injecting a fake or non-existent test ID MUST fail closed with non-zero exit code."""
     collect_file = tmp_path / "collect.txt"
     collect_file.write_text(SAMPLE_COLLECT_OUTPUT, encoding="utf-8")
@@ -69,9 +75,13 @@ def test_fake_injected_test_name_fails_closed(tmp_path: Path, capsys: pytest.Cap
 
     # 3. Inject fake line number pointing outside any test function
     bad_line = tmp_path / "bad_line.txt"
-    bad_line.write_text("SKIPPED [1] tests/test_contract.py:1: module docstring line\n", encoding="utf-8")
+    bad_line.write_text(
+        "SKIPPED [1] tests/test_contract.py:1: module docstring line\n", encoding="utf-8"
+    )
     with pytest.raises(SkipValidationError, match="does not fall inside any test function"):
-        parse_rsx_text(bad_line.read_text(encoding="utf-8"), parse_collected_nodeids(SAMPLE_COLLECT_OUTPUT))
+        parse_rsx_text(
+            bad_line.read_text(encoding="utf-8"), parse_collected_nodeids(SAMPLE_COLLECT_OUTPUT)
+        )
 
     # 4. Inject fake test name into CI step_summary.md table
     fake_ci_md = tmp_path / "step_summary_fake.md"
