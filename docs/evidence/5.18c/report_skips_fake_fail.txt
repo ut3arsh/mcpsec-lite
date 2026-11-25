@@ -1,0 +1,9 @@
+﻿python : SkipValidationError: Test ID 'tests/test_known_gaps.py::test_hallucinated_fake_name' is ABSENT from pytest 
+--collect-only -q output
+At line:1 char:348
++ ... e - should fail`n"; python scripts/report_skips.py $fake 2>&1 | Out-F ...
++                         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (SkipValidationE...-only -q output:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+EXIT_CODE=1
