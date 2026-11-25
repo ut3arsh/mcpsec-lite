@@ -1,0 +1,60 @@
+﻿============================= test session starts =============================
+platform win32 -- Python 3.14.4, pytest-9.1.1, pluggy-1.6.0
+rootdir: C:\Users\BIT PATNA\ai-agent-firewall
+configfile: pyproject.toml
+testpaths: tests
+plugins: anyio-4.15.1, hypothesis-6.168.5, platformdirs-4.13.0, asyncio-1.4.0, cov-7.1.0, timeout-2.4.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+timeout: 30.0s
+timeout method: thread
+timeout func_only: False
+collected 269 items
+
+tests\test_adapters.py ...........                                       [  4%]
+tests\test_approvals.py ............                                     [  8%]
+tests\test_approvals_integration.py .......                              [ 11%]
+tests\test_audit.py ..........                                           [ 14%]
+tests\test_audit_integrity.py ....                                       [ 16%]
+tests\test_benchmark_analysis.py ...............                         [ 21%]
+tests\test_benchmark_runner.py ..                                        [ 22%]
+tests\test_cli_policy.py ...                                             [ 23%]
+tests\test_concurrency_flow.py ...                                       [ 24%]
+tests\test_contract.py ..sss                                             [ 26%]
+tests\test_coverage_completion.py ......                                 [ 28%]
+tests\test_detectors.py .....                                            [ 30%]
+tests\test_detectors_mcp.py .....                                        [ 32%]
+tests\test_flow_path_unless.py ....................                      [ 40%]
+tests\test_flow_properties.py ....                                       [ 41%]
+tests\test_flow_proxy_e2e.py ......                                      [ 43%]
+tests\test_flow_stateful.py .                                            [ 44%]
+tests\test_flow_truth_table.py ......................................... [ 59%]
+.....                                                                    [ 61%]
+tests\test_known_gaps.py xx                                              [ 62%]
+tests\test_locks.py .....                                                [ 63%]
+tests\test_matching.py ........s............                             [ 71%]
+tests\test_multi_upstream.py ...                                         [ 72%]
+tests\test_perf.py ...                                                   [ 73%]
+tests\test_pinning.py ............                                       [ 78%]
+tests\test_policy.py .....................                               [ 86%]
+tests\test_proxy.py .                                                    [ 86%]
+tests\test_proxy_policy.py ....                                          [ 88%]
+tests\test_readme_claims.py .                                            [ 88%]
+tests\test_real_server.py .                                              [ 88%]
+tests\test_redaction.py ...                                              [ 89%]
+tests\test_replay.py .                                                   [ 90%]
+tests\test_report_skips.py ..                                            [ 91%]
+tests\test_session_coverage.py ...........                               [ 95%]
+tests\test_stubs.py ....                                                 [ 96%]
+tests\test_subprocess_hygiene.py ...                                     [ 97%]
+tests\test_supervisor_unit.py ...                                        [ 98%]
+tests\test_toctou_defense.py .                                           [ 99%]
+tests\test_unsupported_surfaces.py ..                                    [100%]
+
+=========================== short test summary info ===========================
+SKIPPED [1] tests\test_contract.py:89: UNVERIFIED-handwritten fixture: handwritten schema fixture based on official GitHub MCP specification (Docker / remote runtime unavailable locally on Windows host)
+SKIPPED [1] tests\test_contract.py:111: Opt-in live contract test (set RUN_LIVE_CONTRACT_TESTS=1)
+SKIPPED [1] tests\test_contract.py:139: Opt-in live contract test (set RUN_LIVE_CONTRACT_TESTS=1)
+SKIPPED [1] tests\test_matching.py:104: Symlink creation not supported without elevation on Windows
+XFAIL tests/test_known_gaps.py::test_known_gap_http_redirect_ssrf_bypass - Known Gap: HTTP redirect bypass. Policy evaluates initial URL domain; upstream HTTP client follows redirects to non-allowlisted internal IPs (addressed in egress filtering / Week 6).
+XFAIL tests/test_known_gaps.py::test_known_gap_filesystem_symlink_toctou - Known Gap: Path TOCTOU. Symlink or directory swap between policy validation and upstream server filesystem read (addressed via file descriptor pinning / kernel namespace isolation).
+================= 263 passed, 4 skipped, 2 xfailed in 58.75s ==================

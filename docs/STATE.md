@@ -1,6 +1,6 @@
 # STATE.md — current project state (update at the end of every chunk; verified facts only)
 
-**As of:** end of week 5, chunk 5.18b.
+**As of:** end of week 5, chunk 5.18c.
 
 ## Built (verified)
 - Weeks 1–4: pass-through proxy, JSONL audit log, policy engine (default deny, path/domain matching), multi-upstream aggregation, taint + flow rules (with `unless` exemption), approval queue + CLI, CI workflow, conformance matrix.
@@ -8,12 +8,14 @@
 - Chunk 5.7–5.13: benchmark validation (C1 aligned with C2 allowlists; ATTACK-22 invalid; ATTACK-24 known-gap; approval modes `deny_all` vs `approve_all`), reproducible reporting tables, CI security gate (`pip-audit` on `requirements.lock`), cross-process locks, audit log rotation and hash-chain tampering verification, exact coverage gate, skips/xfails CI evidence correction, 6 mutation checks, 85% per-module floor.
 - Chunk 5.14–5.17c: pre-registered benign workflows (v1..v4); automated `analysis.py` with Wilson 95% CIs and matrix completeness validation; ADR-018 (C5 adoption); flow-rule `unless.path_allowlist`; E4b / E5 ablations with file-origin untrusted taint and multi-session seeding.
 - Chunk 5.18a: pre-registered ADR-019 (C6 default profile adoption, two-mode deployment model) and pre-registered `benchmark/configs/C6.yaml` committed in `273b22f`; executed benchmark matrix C0, C1, C2, C5, C6 (830 trials); verified byte-for-byte analysis report reproducibility.
-- Chunk 5.18b: pre-freeze verification: verified C6 byte-for-byte integrity against commit `273b22f`; implemented `ConfigIntegrityError` in `benchmark/analysis.py` and SHA-256 recording in runner; hardened `cli/approve_cli.py` against ANSI ESC, Bidi overrides, NUL, and overlong payloads; captured real GitHub MCP server schema (26 tools) to `tests/fixtures/github.tools.real.json` and authored `docs/github_snapshot_diff.md`; full history secret scan across 128 commits triaged (0 real secrets) and wired into CI workflow; created `SECURITY.md` and synced `README.md`.
+- Chunk 5.18b: pre-freeze verification: verified C6 integrity against `273b22f`; added `ConfigIntegrityError` in `benchmark/analysis.py` and SHA-256 recording in runner; hardened `cli/approve_cli.py` against ANSI ESC, Bidi, NUL, and overlong payloads; captured npm GitHub MCP package schema (26 tools); triaged full history secret scan (128 commits, 0 real secrets) and wired into CI; created `SECURITY.md`.
+- Chunk 5.18c: pre-freeze gap closures: renamed npm snapshot to `tests/fixtures/github.tools.npm_deprecated.json` and captured official `github/github-mcp-server` `v2.3.0` (`46` default stdio / `27` read-only tools) into `tests/fixtures/github.tools.official.json` with drift mapped in `docs/github_tool_mapping.md`; built `scripts/report_skips.py` for AST/summary skip verification; redacted sensitive URL query parameters in `cli/approve_cli.py`; audited README claims into `docs/claims.md` with `tests/test_readme_claims.py`; added `scripts/freeze_manifest.py` and `docs/freeze_checklist.md`.
 
-## Verified Numbers (chunk 5.18b run)
-- **Plain unit suite (`pytest`)**: 253 passed, 2 skipped, 8 deselected, 2 xfailed in 52.11s (< 60s).
-- **Static checks**: `mypy --strict` clean (77 source files), `ruff check` clean, `ruff format` clean (125 source files).
-- **Benchmark Matrix (n=50 benign, n=32 valid attacks, 830 trials)**:
+## Verified Numbers (chunk 5.18c run)
+- **Plain unit suite (`pytest -rsx`)**: 257 passed, 2 skipped, 8 deselected, 2 xfailed in 38.15s (< 60s).
+- **Full suite (`pytest -rsx -m "integration or not integration"`)**: 263 passed, 4 skipped, 2 xfailed in 58.75s.
+- **Static checks**: `mypy --strict` clean (82 source files), `ruff check` clean, `ruff format` clean (137 files).
+- **Benchmark Matrix (dev set, scripted attacker, n=50 benign, n=32 valid attacks, 830 trials)**:
   - Benign Hard-Block Rate (`deny_all`): C0 0.00%, C1 0.00%, C2 20.00%, C5 0.00%, C6 0.00% (C6 PASS $\le 5.0\%$).
   - Benign Completion Rate (`approve_all`): C0 100.0%, C1 100.0%, C2 80.0%, C5 100.0%, C6 100.0% (C6 PASS $\ge 90.0\%$).
   - In-Scope ASR (`deny_all`): C0 100.0% (21/21), C1 85.7% (18/21), C2 9.5% (2/21), C5 9.5% (2/21), C6 0.0% (0/21) (C6 PASS $\le 10.0\%$).
@@ -25,4 +27,5 @@
   - Total valid ASR under C6: `deny_all`: 10/32 (31.2%); `approve_all`: 20/32 (62.5%). Under `deny_all`, all 10 succeeding attacks are known-gap or out-of-scope; 0 in-scope attacks succeed.
 
 ## Open Items (to close in order)
-1. Defenses frozen at C6 default profile (`benchmark/configs/C6.yaml`); held-out scenarios are not authored until owner freezes and tags defenses.
+1. Defenses at candidate C6 default profile (`benchmark/configs/C6.yaml`, sha256 `8529d7755217`); NOT yet frozen or tagged (`v0.2-frozen` awaits owner). Held-out scenarios are not authored until owner freezes and tags defenses.
+2. Official `github-mcp-server` adapter/policy alignment documented in `docs/github_tool_mapping.md`; deferred until after owner freeze decision.

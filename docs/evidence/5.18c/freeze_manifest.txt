@@ -1,0 +1,31 @@
+﻿# Pre-Freeze Defense Manifest (Read-Only — No Tag Applied)
+
+git_head:           d567a87a850d0fb3142ec1f7ba6de60c850b580d
+git_head_summary:   d567a87 feat(freeze): add freeze_manifest.py, freeze_checklist.md, and scripts package init
+working_tree_clean: False
+dirty_entries:      6 (M docs/evidence/5.18c/pytest_collect_only.txt,  M docs/evidence/5.18c/pytest_collect_only_full.txt, ?? docs/evidence/5.18c/freeze_manifest.txt, ?? docs/evidence/5.18c/pytest_full_rsx.txt, ?? docs/evidence/5.18c/pytest_plain_rsx.txt)
+
+## 1. Candidate Default Policy Config (C6)
+- benchmark/configs/C6.yaml: 8529d77552179d6e0210e9d6e99f35f81548c35b652acac867cbf9be8b745034
+- pre_reg (273b22f) C6.yaml: 8529d77552179d6e0210e9d6e99f35f81548c35b652acac867cbf9be8b745034 (matches_HEAD=True)
+
+## 2. Development Benchmark Manifests (SHA-256)
+- benchmark/attacks/dev/manifest.json: 1234db232424000dd504df897b2f0641ea061532d0362ef11a653de52b3b8cb5
+- benchmark/benign/manifest.json: b459c3d2ac0e3ca8550ab3e0af25850f186fa4234ef0d2fdc7d54cfe5788ff8b
+- benchmark/benign/manifest_v2.json: 77af5cd8e36c77535a62e31cc6fe10428e037d7fc6c8083c388659cd20d14801
+- benchmark/benign/manifest_v3.json: 57891a9289cc35b89ec0cd33e4b3787f16d996a24b9fcc0ac6325b31650d58cd
+- benchmark/benign/manifest_v4.json: a7384fa3bdb58cb5a89c7fdef51a10cf1dfb64b7c36f1e706ff6568be9b9884f
+
+## 3. Core Defense & Proxy Directory Hashes
+- mcpsec_core/: git_tree=834586a6f44516eef1fc425c2bbfda02df89d595 | working_tree_sha256=26e72e3286c37c3af6c8b50755f8e3466726fbd88d66a855ab5221b65b85e7af (11 tracked files)
+- proxy/: git_tree=358307a76f72b743679f968de770c6980810ad6b | working_tree_sha256=c0cdc7cc4177f6b1bf528d1413b1c255e0dbae822128c2a3d5da4355126a06c0 (4 tracked files)
+
+## 4. Pinned Dependency Lock Hashes (SHA-256)
+- requirements.lock: 922118cd88de3b8fcd9a6fda259d0516339f350b82c4ea9053d2473de62f05e4
+- uv.lock: c51be36daf9853ec242f0305adfca0535598e843c0a03d6925d78c1112a234bf
+- package-lock.json: 7a1410506596b79426e921e3739cc9e542c46b91def429b0dcb0a73e589502a8
+
+## 5. Exact Owner Tagging Commands (Do NOT run automatically)
+# Run after verifying clean working tree and green CI on HEAD:
+git tag -a v0.2-frozen -m "Freeze defenses at C6 candidate (C6 sha256=8529d7755217)" d567a87a850d0fb3142ec1f7ba6de60c850b580d
+git push origin v0.2-frozen

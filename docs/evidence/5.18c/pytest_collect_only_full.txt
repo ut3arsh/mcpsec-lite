@@ -20,6 +20,7 @@ tests/test_approvals.py::test_proxy_session_require_approval_flow
 tests/test_approvals.py::test_approval_manager_sync_handles_blank_and_corrupt_lines
 tests/test_approvals.py::test_approve_cli_list_display_and_secret_redaction
 tests/test_approvals.py::test_approve_cli_prompt_sanitization_and_hardening
+tests/test_approvals.py::test_approve_cli_url_query_parameter_redaction_every_prompt_line
 tests/test_approvals_integration.py::test_held_call_wakes_on_approve_measure_latency
 tests/test_approvals_integration.py::test_held_call_wakes_on_deny_measure_latency
 tests/test_approvals_integration.py::test_held_call_wakes_on_timeout_measure_latency
@@ -234,11 +235,14 @@ tests/test_proxy_policy.py::test_proxy_policy_enforce_mode_blocks_and_returns_ge
 tests/test_proxy_policy.py::test_proxy_policy_audit_mode_logs_and_forwards
 tests/test_proxy_policy.py::test_fault_injection_fails_closed
 tests/test_proxy_policy.py::test_sanitize_upstream_env
+tests/test_readme_claims.py::test_readme_approvals_per_task_and_scope_match_generated_report
 tests/test_real_server.py::test_real_filesystem_server_proxy
 tests/test_redaction.py::test_redaction_mode_full
 tests/test_redaction.py::test_redaction_mode_redacted
 tests/test_redaction.py::test_redaction_mode_hash_only
 tests/test_replay.py::test_streaming_replay_and_sidecar_index
+tests/test_report_skips.py::test_parse_valid_rsx_output_and_generate_table
+tests/test_report_skips.py::test_fake_injected_test_name_fails_closed
 tests/test_session_coverage.py::test_compute_content_bytes_all_types
 tests/test_session_coverage.py::test_extract_model_visible_tool_dict_variants
 tests/test_session_coverage.py::test_session_close_idempotent
@@ -264,4 +268,4 @@ tests/test_toctou_defense.py::test_upstream_filesystem_native_root_confinement_r
 tests/test_unsupported_surfaces.py::test_proxy_server_advertises_only_tools_capability
 tests/test_unsupported_surfaces.py::test_rejection_of_unsupported_surfaces_audit
 
-265 tests collected in 2.51s
+269 tests collected in 2.60s
