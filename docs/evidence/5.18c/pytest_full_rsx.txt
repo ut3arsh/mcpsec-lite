@@ -57,4 +57,4 @@ SKIPPED [1] tests\test_contract.py:139: Opt-in live contract test (set RUN_LIVE_
 SKIPPED [1] tests\test_matching.py:104: Symlink creation not supported without elevation on Windows
 XFAIL tests/test_known_gaps.py::test_known_gap_http_redirect_ssrf_bypass - Known Gap: HTTP redirect bypass. Policy evaluates initial URL domain; upstream HTTP client follows redirects to non-allowlisted internal IPs (addressed in egress filtering / Week 6).
 XFAIL tests/test_known_gaps.py::test_known_gap_filesystem_symlink_toctou - Known Gap: Path TOCTOU. Symlink or directory swap between policy validation and upstream server filesystem read (addressed via file descriptor pinning / kernel namespace isolation).
-================= 263 passed, 4 skipped, 2 xfailed in 58.75s ==================
+================= 263 passed, 4 skipped, 2 xfailed in 55.96s ==================

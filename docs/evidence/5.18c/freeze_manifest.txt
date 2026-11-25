@@ -1,9 +1,9 @@
 ﻿# Pre-Freeze Defense Manifest (Read-Only — No Tag Applied)
 
-git_head:           d567a87a850d0fb3142ec1f7ba6de60c850b580d
-git_head_summary:   d567a87 feat(freeze): add freeze_manifest.py, freeze_checklist.md, and scripts package init
+git_head:           e784d735b73fabba11e735ea8b0988dd4b2aad9c
+git_head_summary:   e784d73 fix(deps): bump opentelemetry-api to 1.45.2 for CVE-2026-126360
 working_tree_clean: False
-dirty_entries:      6 (M docs/evidence/5.18c/pytest_collect_only.txt,  M docs/evidence/5.18c/pytest_collect_only_full.txt, ?? docs/evidence/5.18c/freeze_manifest.txt, ?? docs/evidence/5.18c/pytest_full_rsx.txt, ?? docs/evidence/5.18c/pytest_plain_rsx.txt)
+dirty_entries:      3 (M docs/evidence/5.18c/freeze_manifest.txt,  M docs/evidence/5.18c/pytest_full_rsx.txt,  M docs/evidence/5.18c/pytest_plain_rsx.txt)
 
 ## 1. Candidate Default Policy Config (C6)
 - benchmark/configs/C6.yaml: 8529d77552179d6e0210e9d6e99f35f81548c35b652acac867cbf9be8b745034
@@ -21,11 +21,11 @@ dirty_entries:      6 (M docs/evidence/5.18c/pytest_collect_only.txt,  M docs/ev
 - proxy/: git_tree=358307a76f72b743679f968de770c6980810ad6b | working_tree_sha256=c0cdc7cc4177f6b1bf528d1413b1c255e0dbae822128c2a3d5da4355126a06c0 (4 tracked files)
 
 ## 4. Pinned Dependency Lock Hashes (SHA-256)
-- requirements.lock: 922118cd88de3b8fcd9a6fda259d0516339f350b82c4ea9053d2473de62f05e4
-- uv.lock: c51be36daf9853ec242f0305adfca0535598e843c0a03d6925d78c1112a234bf
+- requirements.lock: 2f01a2330118efd4ba48dba9b2dc59d9e9a0776b3a97120808197f7fb20bcb9a
+- uv.lock: 156ebb68b347f78e6227c765bcae3fedd5616b1e48f5c6ec1a9bcd57ef0cc2e2
 - package-lock.json: 7a1410506596b79426e921e3739cc9e542c46b91def429b0dcb0a73e589502a8
 
 ## 5. Exact Owner Tagging Commands (Do NOT run automatically)
 # Run after verifying clean working tree and green CI on HEAD:
-git tag -a v0.2-frozen -m "Freeze defenses at C6 candidate (C6 sha256=8529d7755217)" d567a87a850d0fb3142ec1f7ba6de60c850b580d
+git tag -a v0.2-frozen -m "Freeze defenses at C6 candidate (C6 sha256=8529d7755217)" e784d735b73fabba11e735ea8b0988dd4b2aad9c
 git push origin v0.2-frozen
