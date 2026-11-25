@@ -1,15 +1,21 @@
 {
   "_metadata": {
-    "server_name": "github-mcp-server",
-    "server_version": "0.6.2",
     "package": "@modelcontextprotocol/server-github",
     "package_version": "2025.4.8",
-    "repository": "https://github.com/modelcontextprotocol/servers/tree/main/src/github",
+    "reported_server_name": "github-mcp-server",
+    "reported_server_version": "0.6.2",
+    "deprecated": true,
+    "deprecation_notice": "Archived and unmaintained; no security guarantees. See https://github.com/modelcontextprotocol/servers-archived",
+    "is_official_github_server": false,
+    "read_only_mode_supported": false,
+    "write_tools_present": true,
+    "write_tool_count": 12,
+    "repository": "https://github.com/modelcontextprotocol/servers-archived/tree/main/src/github",
     "protocol_version": "2024-11-05",
     "captured_at": "2026-11-11T10:09:08.932476+00:00",
     "transport": "stdio",
-    "network_mode": "offline (dummy token, read-only tools/list schema capture)",
-    "verification_status": "VERIFIED-real-server",
+    "network_mode": "offline (dummy token, tools/list schema capture; server has no --read-only flag)",
+    "verification_status": "CAPTURED-npm-deprecated-package",
     "tool_count": 26
   },
   "tools": [

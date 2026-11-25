@@ -1,0 +1,41 @@
+﻿Start a server that communicates via standard input/output streams using JSON-RPC messages.
+
+Usage:
+  github-mcp-server stdio [flags]
+
+Flags:
+      --app-id string                 GitHub App ID or client ID, enabling non-interactive server-to-server authentication
+      --app-installation-id string    GitHub App installation ID to mint installation access tokens for
+      --app-private-key-path string   Path to the GitHub App private key (PEM). Preferred over GITHUB_APP_PRIVATE_KEY: keeps the key off the command line and out of the environment
+  -h, --help[=true|false]             help for stdio
+      --oauth-callback-port int       Fixed local port for the OAuth callback server. Defaults to a random port; set a fixed port when mapping it through Docker
+      --oauth-client-id string        OAuth App or GitHub App client ID, enabling interactive OAuth login when no token is set
+      --oauth-client-secret string    OAuth client secret, if the app requires one (it is a public, non-confidential credential for distributed clients)
+      --oauth-scopes strings          Comma-separated OAuth scopes to request; also filters tools to those scopes. Defaults to the full supported set
+
+Global Flags:
+      --content-window-size int               Specify the content window size (default 5000)
+      --enable-command-logging[=true|false]   When enabled, the server will log all command requests and responses to the log file
+      --exclude-tools strings                 Comma-separated list of tool names to disable regardless of other settings
+      --export-translations[=true|false]      Save translations to a JSON file
+      --features strings                      Comma-separated list of feature flags to enable
+      --gh-host string                        Specify the GitHub hostname (for GitHub Enterprise etc.)
+      --insiders[=true|false]                 Enable insiders features
+      --lockdown-mode[=true|false]            Enable lockdown mode
+      --log-file string                       Path to log file
+      --read-only[=true|false]                Restrict the server to read-only operations
+      --repo-access-cache-ttl duration        Override the repo access cache TTL (e.g. 1m, 0s to disable) (default 5m0s)
+      --tools strings                         Comma-separated list of specific tools to enable
+      --toolsets strings                      Comma-separated list of tool groups to enable (no spaces).
+                                              Available: actions, code_quality, code_security, copilot, copilot_automations,
+                                              	     copilot_issue_intents, dependabot, discussions, gists, git, governance,
+                                              	     issues, labels, notifications, orgs, projects, pull_requests, repos,
+                                              	     secret_protection, security_advisories, stargazers, users
+                                              Special toolset keywords:
+                                                - all: Enables all available toolsets
+                                                - default: Enables the default toolset configuration of:
+                                              	     context, copilot, issues, pull_requests, repos, users
+                                              Examples:
+                                                - --toolsets=actions,gists,notifications
+                                                - Default + additional: --toolsets=default,actions,gists
+                                                - All tools: --toolsets=all

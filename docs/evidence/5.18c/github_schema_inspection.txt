@@ -1,0 +1,57 @@
+﻿Counts: hw=8, npm=26, official=46 (read_only=27, write=19)
+In hw NOT in official: ['get_issue', 'get_pull_request']
+In npm NOT in official: ['create_issue', 'create_pull_request_review', 'get_issue', 'get_pull_request', 'get_pull_request_comments', 'get_pull_request_files', 'get_pull_request_reviews', 'get_pull_request_status', 'update_issue']
+In official NOT in npm: ['add_comment_to_pending_review', 'add_reply_to_pull_request_comment', 'assign_copilot_to_issue', 'delete_file', 'get_commit', 'get_label', 'get_latest_release', 'get_me', 'get_release_by_tag', 'get_tag', 'get_team_members', 'get_teams', 'issue_read', 'issue_write', 'list_branches', 'list_issue_fields', 'list_issue_types', 'list_releases', 'list_repository_collaborators', 'list_tags', 'pull_request_read', 'pull_request_review_write', 'request_copilot_review', 'search_commits', 'search_pull_requests', 'sub_issue_write', 'ui_get', 'update_issue_comment', 'update_pull_request']
+In hw & official: ['get_file_contents', 'list_issues', 'list_pull_requests', 'search_code', 'search_issues', 'search_repositories']
+C6 github capabilities: ['github.get_issue', 'github.get_pull_request', 'github.get_file_contents', 'github.create_issue_comment', 'github.list_issues', 'github.list_pull_requests', 'github.search_repositories', 'github.search_code', 'github.search_issues']
+C6 github policies: ['github.get_issue', 'github.get_pull_request', 'github.get_file_contents', 'github.create_issue_comment', 'github.list_issues', 'github.list_pull_requests', 'github.search_repositories', 'github.search_code', 'github.search_issues']
+C6 github taint: ['github.get_issue', 'github.get_pull_request', 'github.get_file_contents', 'github.list_issues', 'github.list_pull_requests', 'github.search_repositories', 'github.search_code', 'github.search_issues']
+Adapter github tools: ['github.create_issue', 'github.create_pull_request', 'github.get_file_contents', 'github.get_issue', 'github.get_pull_request', 'github.list_issues', 'github.list_pull_requests', 'github.search_code', 'github.search_issues', 'github.search_repositories']
+
+--- OFFICIAL 46 TOOLS SCHEMAS ---
+WR | add_comment_to_pending_review | req=['body', 'owner', 'path', 'pullNumber', 'repo', 'subjectType'] | props=['body', 'line', 'owner', 'path', 'pullNumber', 'repo', 'side', 'startLine', 'startSide', 'subjectType'] | Add review comment to the requester's latest pending pull request review. A
+WR | add_issue_comment | req=['issue_number', 'owner', 'repo'] | props=['body', 'comment_id', 'issue_number', 'owner', 'reaction', 'repo'] | Add a comment and/or reaction to a specific issue or issue comment in a Git
+WR | add_reply_to_pull_request_comment | req=['commentId', 'owner', 'repo'] | props=['body', 'commentId', 'owner', 'pullNumber', 'reaction', 'repo'] | Add a reply and/or reaction to an existing pull request comment. This can c
+WR | assign_copilot_to_issue | req=['issue_number', 'owner', 'repo'] | props=['base_ref', 'custom_instructions', 'issue_number', 'owner', 'repo'] | Assign Copilot to a specific issue in a GitHub repository.
+WR | create_branch | req=['branch', 'owner', 'repo'] | props=['branch', 'from_branch', 'owner', 'repo'] | Create a new branch in a GitHub repository
+WR | create_or_update_file | req=['branch', 'content', 'message', 'owner', 'path', 'repo'] | props=['allow_symlink_write', 'branch', 'content', 'message', 'owner', 'path', 'repo', 'sha'] | Create or update a single file in a GitHub repository. 
+WR | create_pull_request | req=['base', 'head', 'owner', 'repo', 'title'] | props=['base', 'body', 'draft', 'head', 'maintainer_can_modify', 'owner', 'repo', 'reviewers', 'title'] | Create a new pull request in a GitHub repository.
+WR | create_repository | req=['name'] | props=['autoInit', 'description', 'name', 'organization', 'private'] | Create a new GitHub repository in your account or specified organization
+WR | delete_file | req=['branch', 'message', 'owner', 'path', 'repo'] | props=['branch', 'message', 'owner', 'path', 'repo'] | Delete a file from a GitHub repository
+WR | fork_repository | req=['owner', 'repo'] | props=['organization', 'owner', 'repo'] | Fork a GitHub repository to your account or specified organization
+RO | get_commit | req=['owner', 'repo', 'sha'] | props=['detail', 'owner', 'page', 'perPage', 'repo', 'sha'] | Get details for a commit from a GitHub repository
+RO | get_file_contents | req=['owner', 'repo'] | props=['fields', 'owner', 'path', 'ref', 'repo', 'sha'] | Get the contents of a file or directory from a GitHub repository
+RO | get_label | req=['name', 'owner', 'repo'] | props=['name', 'owner', 'repo'] | Get a specific label from a repository.
+RO | get_latest_release | req=['owner', 'repo'] | props=['owner', 'repo'] | Get the latest release in a GitHub repository
+RO | get_me | req=[] | props=[] | Get details of the authenticated GitHub user. Use this when a request is ab
+RO | get_release_by_tag | req=['owner', 'repo', 'tag'] | props=['owner', 'repo', 'tag'] | Get a specific release by its tag name in a GitHub repository
+RO | get_tag | req=['owner', 'repo', 'tag'] | props=['owner', 'repo', 'tag'] | Get details about a specific git tag in a GitHub repository
+RO | get_team_members | req=['org', 'team_slug'] | props=['org', 'team_slug'] | Get member usernames of a specific team in an organization. Limited to orga
+RO | get_teams | req=[] | props=['user'] | Get details of the teams the user is a member of. Limited to organizations 
+RO | issue_read | req=['issue_number', 'method', 'owner', 'repo'] | props=['issue_number', 'method', 'owner', 'page', 'perPage', 'repo'] | Get information about a specific issue in a GitHub repository.
+WR | issue_write | req=['method', 'owner', 'repo'] | props=['assignees', 'body', 'duplicate_of', 'issue_fields', 'issue_number', 'labels', 'method', 'milestone', 'owner', 'parent_issue_number', 'parent_owner', 'parent_repo', 'repo', 'state', 'state_reason', 'title', 'type'] | Create a new or update an existing issue in a GitHub repository.
+RO | list_branches | req=['owner', 'repo'] | props=['owner', 'page', 'perPage', 'repo'] | List branches in a GitHub repository
+RO | list_commits | req=['owner', 'repo'] | props=['author', 'fields', 'owner', 'page', 'path', 'perPage', 'repo', 'sha', 'since', 'until'] | Get list of commits of a branch in a GitHub repository. Returns at least 30
+RO | list_issue_fields | req=['owner'] | props=['owner', 'repo'] | List issue fields for a repository or organization. Returns field definitio
+RO | list_issue_types | req=['owner'] | props=['owner', 'repo'] | List supported issue types for a repository or its owner organization. When
+RO | list_issues | req=['owner', 'repo'] | props=['after', 'direction', 'field_filters', 'fields', 'labels', 'orderBy', 'owner', 'perPage', 'repo', 'since', 'state'] | List issues in a GitHub repository. For pagination, use the 'endCursor' fro
+RO | list_pull_requests | req=['owner', 'repo'] | props=['base', 'direction', 'fields', 'head', 'owner', 'page', 'perPage', 'repo', 'sort', 'state'] | List pull requests in a GitHub repository. If the user specifies an author,
+RO | list_releases | req=['owner', 'repo'] | props=['fields', 'owner', 'page', 'perPage', 'repo'] | List releases in a GitHub repository
+RO | list_repository_collaborators | req=['owner', 'repo'] | props=['affiliation', 'owner', 'page', 'perPage', 'repo'] | List collaborators of a GitHub repository. Results are paginated; the respo
+RO | list_tags | req=['owner', 'repo'] | props=['owner', 'page', 'perPage', 'repo'] | List git tags in a GitHub repository
+WR | merge_pull_request | req=['owner', 'pullNumber', 'repo'] | props=['commit_message', 'commit_title', 'expectedHeadSha', 'merge_method', 'owner', 'pullNumber', 'repo'] | Merge a pull request in a GitHub repository.
+RO | pull_request_read | req=['method', 'owner', 'pullNumber', 'repo'] | props=['after', 'method', 'owner', 'page', 'perPage', 'pullNumber', 'repo'] | Get information on a specific pull request in GitHub repository.
+WR | pull_request_review_write | req=['method', 'owner', 'pullNumber', 'repo'] | props=['body', 'commitID', 'event', 'method', 'owner', 'pullNumber', 'repo', 'resolutionReason', 'threadId'] | Create and/or submit, delete review of a pull request.
+WR | push_files | req=['branch', 'files', 'message', 'owner', 'repo'] | props=['branch', 'files', 'message', 'owner', 'repo'] | Push multiple files to a GitHub repository in a single commit
+WR | request_copilot_review | req=['owner', 'pullNumber', 'repo'] | props=['owner', 'pullNumber', 'repo'] | Request a GitHub Copilot code review for a pull request. Use this for autom
+RO | search_code | req=['query'] | props=['fields', 'order', 'page', 'perPage', 'query', 'sort'] | Fast and precise code search across ALL GitHub repositories using GitHub's 
+RO | search_commits | req=['query'] | props=['order', 'page', 'perPage', 'query', 'sort'] | Search for commits across GitHub repositories using GitHub's commit search 
+RO | search_issues | req=['query'] | props=['fields', 'order', 'owner', 'page', 'perPage', 'query', 'repo', 'sort'] | Search issues using natural-language semantic matching. Best for conceptual
+RO | search_pull_requests | req=['query'] | props=['fields', 'order', 'owner', 'page', 'perPage', 'query', 'repo', 'sort'] | Search for pull requests in GitHub repositories using issues search syntax 
+RO | search_repositories | req=['query'] | props=['minimal_output', 'order', 'page', 'perPage', 'query', 'sort'] | Find GitHub repositories by name, description, readme, topics, or other met
+RO | search_users | req=['query'] | props=['order', 'page', 'perPage', 'query', 'sort'] | Find GitHub users by username, real name, or other profile information. Use
+WR | sub_issue_write | req=['issue_number', 'method', 'owner', 'repo', 'sub_issue_id'] | props=['after_id', 'before_id', 'issue_number', 'method', 'owner', 'replace_parent', 'repo', 'sub_issue_id'] | Add a sub-issue to a parent issue in a GitHub repository.
+RO | ui_get | req=['method', 'owner'] | props=['method', 'owner', 'repo'] | Fetch UI data for MCP Apps (labels, assignees, milestones, issue types, bra
+WR | update_issue_comment | req=['body', 'comment_id', 'owner', 'repo'] | props=['body', 'comment_id', 'owner', 'repo'] | Update the body of an existing issue or pull request conversation comment. 
+WR | update_pull_request | req=['owner', 'pullNumber', 'repo'] | props=['base', 'body', 'draft', 'maintainer_can_modify', 'owner', 'pullNumber', 'repo', 'reviewers', 'state', 'title'] | Update an existing pull request in a GitHub repository.
+WR | update_pull_request_branch | req=['owner', 'pullNumber', 'repo'] | props=['expectedHeadSha', 'owner', 'pullNumber', 'repo'] | Update the branch of a pull request with the latest changes from the base b

@@ -1,132 +1,85 @@
-# GitHub MCP Server: Real vs Handwritten Snapshot Diff Analysis
+# GitHub MCP Server Snapshot Diff Analysis
 
-**Captured at:** 2026-11-11T10:09:08.932476+00:00  
-**Real Server Fixture:** [`tests/fixtures/github.tools.real.json`](file:///c:/Users/BIT%20PATNA/ai-agent-firewall/tests/fixtures/github.tools.real.json)  
-**Handwritten Fixture:** [`tests/fixtures/github.tools.json`](file:///c:/Users/BIT%20PATNA/ai-agent-firewall/tests/fixtures/github.tools.json)  
-**Server Implementation:** `github-mcp-server` v0.6.2 (npm `@modelcontextprotocol/server-github` v2025.4.8)  
-**Protocol Version:** `2024-11-05` (Transport: stdio, offline capture with dummy authentication token)  
-**Verification Status:** `VERIFIED-real-server`  
+This document compares three GitHub MCP tool schemas:
+
+1. **Handwritten Benchmark Fixture (Baseline Mock):** [`tests/fixtures/github.tools.json`](file:///c:/Users/BIT%20PATNA/ai-agent-firewall/tests/fixtures/github.tools.json) (`UNVERIFIED-handwritten`, **8 tools**) — used by the scripted fake GitHub server in the dev benchmark.
+2. **Archived / Deprecated npm Package:** [`tests/fixtures/github.tools.npm_deprecated.json`](file:///c:/Users/BIT%20PATNA/ai-agent-firewall/tests/fixtures/github.tools.npm_deprecated.json) (`@modelcontextprotocol/server-github@2025.4.8`, server `0.6.2`, **26 tools**, `VERIFIED` schema from deprecated npm package; **NOT** GitHub's official server).
+3. **Official Go GitHub MCP Server:** [`tests/fixtures/github.tools.official.json`](file:///c:/Users/BIT%20PATNA/ai-agent-firewall/tests/fixtures/github.tools.official.json) (`github/github-mcp-server` **`v2.3.0`**, commit `c6b62954c062b3ad779f4e208716e09cb4a723e0`, asset `github-mcp-server_Windows_x86_64.zip`, flags `["stdio"]`, **46 tools** in default toolsets; **27 tools** with `--read-only`).
+
+> **Scope Note (No Code/Config Edits):** Per Chunk 5.18c rules, this document and [`docs/github_tool_mapping.md`](file:///c:/Users/BIT%20PATNA/ai-agent-firewall/docs/github_tool_mapping.md) are **documentation only**. Neither `benchmark/configs/*.yaml`, `mcpsec_core/adapters.py`, nor `mcpsec_core/` taint logic were modified. The dev/frozen C6 benchmark continues to target the fake/mock GitHub server matching the handwritten schema.
 
 ---
 
-## 1. Overview & Tool Inventory
+## 1. Implementation & Verification Comparison
 
-| Metric | Handwritten Fixture | Real GitHub Server | Delta |
+| Dimension | Handwritten (`github.tools.json`) | Deprecated npm (`@modelcontextprotocol/server-github`) | Official Go (`github/github-mcp-server` `v2.3.0`) |
 |---|---|---|---|
-| Total Tools | 8 | 26 | +18 tools |
-| Mutating / Write Tools | 0 | 12 | +12 tools |
-| Read / Inspection Tools | 8 | 14 | +6 tools |
-| Missing from Real Server | 0 | 0 | 0 (100% of handwritten tool names exist in real server) |
-
-All 8 tools defined in the handwritten fixture exist in the official `@modelcontextprotocol/server-github` implementation with identical tool names. However, the real server exports an additional 18 tools covering write operations, pull request lifecycle management, branch creation, repository forks, and git commit history.
-
----
-
-## 2. Tools Present in Real Server but Absent from Handwritten Fixture
-
-The 18 tools present in the real server but absent from [`tests/fixtures/github.tools.json`](file:///c:/Users/BIT%20PATNA/ai-agent-firewall/tests/fixtures/github.tools.json) fall into two categories:
-
-### A. Mutating / Write Tools (12 tools)
-These tools perform mutating state changes on GitHub repositories and issues:
-1. `create_or_update_file`: Create or update a single file in a GitHub repository.
-2. `push_files`: Push multiple files to a GitHub repository in a single commit.
-3. `create_repository`: Create a new GitHub repository in the authenticated account.
-4. `fork_repository`: Fork a GitHub repository to account or specified organization.
-5. `create_branch`: Create a new branch in a GitHub repository.
-6. `create_issue`: Create a new issue in a GitHub repository.
-7. `update_issue`: Update an existing issue in a GitHub repository.
-8. `add_issue_comment`: Add a comment to an existing issue.
-9. `create_pull_request`: Create a new pull request in a GitHub repository.
-10. `update_pull_request_branch`: Update a pull request branch with latest base branch changes.
-11. `merge_pull_request`: Merge a pull request into its base branch.
-12. `create_pull_request_review`: Create a review comment or verdict on a pull request.
-
-### B. Read-Only / Inspection Tools (6 tools)
-These tools provide additional read-only inspection surfaces:
-1. `list_commits`: Get list of commits of a branch in a GitHub repository.
-2. `search_users`: Search for users across GitHub.
-3. `get_pull_request_files`: Get the list of files changed in a pull request.
-4. `get_pull_request_status`: Get the combined status of all status checks for a pull request.
-5. `get_pull_request_comments`: Get review comments on a pull request.
-6. `get_pull_request_reviews`: Get reviews on a pull request.
+| Provenance / Status | `UNVERIFIED-handwritten` | `CAPTURED-npm-deprecated-package` (archived `servers-archived`; NOT GitHub's official server) | `VERIFIED-official-github-mcp-server` (`github-mcp-server_Windows_x86_64.zip`, SHA-256 verified) |
+| Capture Flags | N/A | None supported (stdio default) | `stdio` (`--read-only` supported; `--toolsets` supported, default `context,copilot,issues,pull_requests,repos,users`) |
+| `--read-only` Mode | N/A | **Not supported** | **Supported** (filters 46 default tools down to **27** read-only tools) |
+| Write Tools Present | 0 | **Yes (12 write tools always exposed)** | **Yes by default (19 write tools)**; **0 when `--read-only` passed**; **94 total with `--toolsets all`** |
+| MCP Capabilities Advertised | `tools` (benchmark mock) | `tools` | `completions`, `prompts`, `resources`, `tools` (`mcpsec-lite` blocks non-`tools` surfaces with `ERR_UNSUPPORTED_SURFACE`) |
+| Total Tools Exposed | 8 | 26 | **46** (default toolsets) / **27** (`--read-only`) / **94** (`--toolsets all`) |
+| Auth Behavior on `tools/list` (Dummy Token) | N/A | Served statically without token check | Attempted token scope check (`stderr`: `failed to fetch token scopes, continuing without scope filtering`), then served full `tools/list` without live results |
 
 ---
 
-## 3. Renamed and Equivalent Tools
+## 2. Official Server (`v2.3.0`, `stdio`) vs. Handwritten Fixture (`github.tools.json`)
 
-| Operation | Benchmark / Handwritten Name | Real Server Tool Name | Status & Resolution |
+### A. Tools Present, Missing, and Consolidated/Renamed
+
+Of the **8** tools in the handwritten fixture (which C6 relies on alongside `github.create_issue_comment`):
+
+| Handwritten / C6 Tool Name | Status in Official `github-mcp-server v2.3.0` | Breaking Delta |
+|---|---|---|
+| `get_issue` | **MISSING (Consolidated)** | Replaced by `issue_read` (requires `method` in `{get, get_comments, get_sub_issues, get_labels}`). |
+| `get_pull_request` | **MISSING (Consolidated)** | Replaced by `pull_request_read` (requires `method` in `{get, get_diff, get_status, get_files, get_review_comments, get_reviews, get_comments}`; param `pull_number` $\rightarrow$ `pullNumber`). |
+| `create_issue_comment` (used in C6 & benchmarks) | **MISSING (Renamed)** | Named `add_issue_comment` in official server (also missing in handwritten fixture). |
+| `get_file_contents` | **Present** (Schema changed) | `path` no longer required (directory listings); added `fields`, `sha` alongside `ref`. |
+| `list_issues` | **Present** (Schema changed) | `per_page` $\rightarrow$ `perPage`, `page` $\rightarrow$ `after` (cursor), `sort` $\rightarrow$ `orderBy`; added `fields`, `field_filters`. |
+| `list_pull_requests` | **Present** (Schema changed) | `per_page` $\rightarrow$ `perPage`; added `fields`. |
+| `search_repositories` | **Present** (Schema changed) | `per_page` $\rightarrow$ `perPage`; added `minimal_output`, `order`, `sort`. |
+| `search_code` | **Present (Breaking)** | Required `q` renamed to **`query`**; `per_page` $\rightarrow$ `perPage`; added `fields`. |
+| `search_issues` | **Present (Breaking)** | Required `q` renamed to **`query`**; `per_page` $\rightarrow$ `perPage`; added `fields`, `owner`, `repo`. |
+
+### B. Extra Tools Present in Official Server (`v2.3.0` Default Toolsets)
+
+All **40 additional tools** (`46 - 6 shared names = 40`) absent from `tests/fixtures/github.tools.json` fall into:
+- **21 Read-Only Tools (present under `--read-only`):** `get_commit`, `get_label`, `get_latest_release`, `get_me`, `get_release_by_tag`, `get_tag`, `get_team_members`, `get_teams`, `issue_read`, `list_branches`, `list_commits`, `list_issue_fields`, `list_issue_types`, `list_releases`, `list_repository_collaborators`, `list_tags`, `pull_request_read`, `search_commits`, `search_pull_requests`, `search_users`, `ui_get`.
+- **19 Write / Mutation Tools (stripped if `--read-only` is set):** `add_comment_to_pending_review`, `add_issue_comment`, `add_reply_to_pull_request_comment`, `assign_copilot_to_issue`, `create_branch`, `create_or_update_file`, `create_pull_request`, `create_repository`, `delete_file`, `fork_repository`, `issue_write`, `merge_pull_request`, `pull_request_review_write`, `push_files`, `request_copilot_review`, `sub_issue_write`, `update_issue_comment`, `update_pull_request`, `update_pull_request_branch`.
+
+### C. Official Go `v2.3.0` (`46`) vs. Deprecated npm `@modelcontextprotocol/server-github` (`26`)
+
+- **9 tools in deprecated npm absent from official default `v2.3.0`:**
+  `create_issue`, `create_pull_request_review`, `get_issue`, `get_pull_request`, `get_pull_request_comments`, `get_pull_request_files`, `get_pull_request_reviews`, `get_pull_request_status`, `update_issue` (replaced by consolidated `issue_read`, `issue_write`, `pull_request_read`, `pull_request_review_write`).
+- **29 tools in official default `v2.3.0` absent from deprecated npm:**
+  Consolidated read/write/review/sub-issue/branch/tag/release/commit/team/Copilot tools listed in [`tests/fixtures/github.tools.official.json`](file:///c:/Users/BIT%20PATNA/ai-agent-firewall/tests/fixtures/github.tools.official.json).
+
+---
+
+## 3. Shared Tool Parameter Schema Divergences (Official vs. Handwritten)
+
+| Tool | Handwritten (`github.tools.json`) Properties & Required | Official `v2.3.0` Properties & Required | Impact on Strict Adapter (`all_args` / `path_args`) |
 |---|---|---|---|
-| Post issue comment | `create_issue_comment` | `add_issue_comment` | **Renamed.** Benchmark scenarios (e.g. `ATTACK-02`) use `create_issue_comment`. Connecting to real server requires adapter translation or policy alias. |
-| Read issue | `get_issue` | `get_issue` | Exact match. |
-| Read file | `get_file_contents` | `get_file_contents` | Exact match (parameter nuance below). |
-| List issues | `list_issues` | `list_issues` | Exact match. |
-| Search code | `search_code` | `search_code` | Exact match. |
-| Search repos | `search_repositories` | `search_repositories` | Exact match (parameter nuance below). |
+| `get_file_contents` | props: `owner, path, ref, repo`; req: `owner, path, repo` | props: `fields, owner, path, ref, repo, sha`; req: `owner, repo` | `ERR_UNEXPECTED_ARGUMENT` on `fields`/`sha`; `path` omitted on directory lookup fails `extract_path_arguments` (`path_args=("path",)`). |
+| `list_issues` | props: `direction, labels, owner, page, per_page, repo, since, sort, state`; req: `owner, repo` | props: `after, direction, field_filters, fields, labels, orderBy, owner, perPage, repo, since, state`; req: `owner, repo` | `ERR_UNEXPECTED_ARGUMENT` on `after`, `field_filters`, `fields`, `orderBy`, `perPage`. |
+| `list_pull_requests` | props: `base, direction, head, owner, page, per_page, repo, sort, state`; req: `owner, repo` | props: `base, direction, fields, head, owner, page, perPage, repo, sort, state`; req: `owner, repo` | `ERR_UNEXPECTED_ARGUMENT` on `fields`, `perPage`. |
+| `search_repositories` | props: `page, per_page, query`; req: `query` | props: `minimal_output, order, page, perPage, query, sort`; req: `query` | `ERR_UNEXPECTED_ARGUMENT` on `minimal_output`, `order`, `perPage`, `sort`. |
+| `search_code` | props: `order, page, per_page, q, sort`; req: **`q`** | props: `fields, order, page, perPage, query, sort`; req: **`query`** | **Call-breaking:** required parameter `q` renamed to `query`; `ERR_UNEXPECTED_ARGUMENT` on `query`, `fields`, `perPage`. |
+| `search_issues` | props: `order, page, per_page, q, sort`; req: **`q`** | props: `fields, order, owner, page, perPage, query, repo, sort`; req: **`query`** | **Call-breaking:** required parameter `q` renamed to `query`; `ERR_UNEXPECTED_ARGUMENT` on `query`, `fields`, `owner`, `repo`, `perPage`. |
 
 ---
 
-## 4. Parameter Schema Comparison on Shared Tools
+## 4. Concrete Breaking Impact on `C6.yaml` and `mcpsec_core/adapters.py`
 
-For the 8 shared tools, parameter schemas were compared field-by-field:
-
-### Identical Schemas (5 tools)
-- **`get_issue`**:
-  - Properties: `['issue_number', 'owner', 'repo']`
-  - Required: `['issue_number', 'owner', 'repo']` (Identical)
-- **`get_pull_request`**:
-  - Properties: `['owner', 'pull_number', 'repo']`
-  - Required: `['owner', 'pull_number', 'repo']` (Identical)
-- **`list_issues`**:
-  - Properties: `['direction', 'labels', 'owner', 'page', 'per_page', 'repo', 'since', 'sort', 'state']`
-  - Required: `['owner', 'repo']` (Identical)
-- **`list_pull_requests`**:
-  - Properties: `['base', 'direction', 'head', 'owner', 'page', 'per_page', 'repo', 'sort', 'state']`
-  - Required: `['owner', 'repo']` (Identical)
-- **`search_issues`**:
-  - Properties: `['order', 'page', 'per_page', 'q', 'sort']`
-  - Required: `['q']` (Identical)
-
-### Schema Divergences (3 tools)
-1. **`get_file_contents`**:
-   - Handwritten properties: `['owner', 'path', 'ref', 'repo']` (Required: `['owner', 'path', 'repo']`)
-   - Real properties: `['branch', 'owner', 'path', 'repo']` (Required: `['owner', 'path', 'repo']`)
-   - *Difference:* Handwritten used standard GitHub REST parameter `ref` (which allows branches, tags, or commit SHAs). Real server uses `branch` parameter.
-2. **`search_code`**:
-   - Handwritten properties: `['order', 'page', 'per_page', 'q', 'sort']` (Required: `['q']`)
-   - Real properties: `['order', 'page', 'per_page', 'q']` (Required: `['q']`)
-   - *Difference:* Handwritten included optional `sort`. Real server omits `sort` property in its exposed schema.
-3. **`search_repositories`**:
-   - Handwritten properties: `['page', 'per_page', 'query']` (Required: `['query']`)
-   - Real properties: `['page', 'perPage', 'query']` (Required: `['query']`)
-   - *Difference:* Handwritten used snake_case `per_page`. Real server schema uses camelCase `perPage`.
-
----
-
-## 5. Breaking Impact Assessment
-
-Per standing rule AGENTS.md §4 and the Chunk 5.18b prompt, **benchmark configs (`benchmark/configs/*.yaml`) are not modified in this verification step**. This section evaluates the operational impact if a live deployment connects `mcpsec-lite` directly to `@modelcontextprotocol/server-github`:
-
-### A. Policy Allowlists (`C1`–`C6`)
-- **Current Config:** Allowlists in `C1`, `C2`, `C5`, and `C6` grant access to `github.get_issue`, `github.list_issues`, and `github.create_issue_comment`.
-- **Impact:**
-  - Read tools (`get_issue`, `list_issues`) resolve cleanly without breakage.
-  - Calls to `github.create_issue_comment` fail closed under default-deny policy because the upstream tool is named `github.add_issue_comment`.
-  - **Remediation for live deployment:** Upstream adapter in `proxy/` should alias `create_issue_comment` $\leftrightarrow$ `add_issue_comment`, or policy should add `github.add_issue_comment` to allowed tools.
-
-### B. Capabilities Mapping
-- **Current Mapping:** Upstream tool capabilities for github are classified as `network_read` for queries and `egress` for issue comments.
-- **Impact:**
-  - The 12 real mutating tools (`create_or_update_file`, `push_files`, `create_repository`, `fork_repository`, `create_branch`, `create_issue`, `update_issue`, `add_issue_comment`, `create_pull_request`, `update_pull_request_branch`, `merge_pull_request`, `create_pull_request_review`) must be mapped to capability `["write", "egress"]`.
-  - Under `C6` flow rules, any of these calls following an untrusted read will properly trigger `appr-untrusted-egress` or `appr-untrusted-write` approval requirements.
-
-### C. Taint Sources
-- **Current Config:** In `benchmark/configs/C6.yaml`, `taint_sources.untrusted_content` includes:
-  `github.get_issue`, `github.list_issues`, `github.get_pull_request`, `github.list_pull_requests`, `github.search_issues`, `github.search_code`, `github.search_repositories`.
-- **Impact:**
-  - All 7 declared taint sources match exact tool names on the real server.
-  - **Gap to close on server expansion:** The real server exposes 4 additional user-content read tools: `get_pull_request_comments`, `get_pull_request_reviews`, `list_commits`, and `get_file_contents`.
-  - In a full production profile, `get_pull_request_comments` and `get_pull_request_reviews` contain attacker-controllable text and must be designated as `untrusted_content` sources.
-
-### D. Upstream Adapters & Benchmark Harness
-- In the dev benchmark harness (`benchmark/dev/benchmark_dev.py`), mocked tools currently match handwritten names.
-- When transitioning to live integration tests against the real server binary, the harness adapter must forward `create_issue_comment` to `add_issue_comment` and map `per_page` $\rightarrow$ `perPage` for `search_repositories`.
+1. **Policy Allowlists (`benchmark/configs/C6.yaml`):**
+   - `github.get_issue`, `github.get_pull_request`, and `github.create_issue_comment` are listed in `C6.yaml` (`capabilities` and `policies`), but **none of these three tool names exist** in official `github/github-mcp-server v2.3.0` (replaced by `issue_read`, `pull_request_read`, `add_issue_comment`).
+   - Meanwhile, all 40 newly exposed official tools are omitted from `C6.yaml` and therefore **default-denied** by policy.
+2. **Capabilities (`C6.yaml`):**
+   - Running the official server without `--read-only` introduces **19 mutating/egress tools** (including `issue_write`, `add_issue_comment`, `create_pull_request`, `create_or_update_file`, `push_files`, `delete_file`, `merge_pull_request`, `assign_copilot_to_issue`, `sub_issue_write`). Only `add_issue_comment` (under the deprecated alias `create_issue_comment`) has `[write, egress]` declared in `C6.yaml`.
+3. **Taint Sources (`C6.yaml`):**
+   - C6 declares `github.get_issue` and `github.get_pull_request` as `untrusted_content` sources, **NOT** `github.issue_read`, `github.pull_request_read`, `github.search_pull_requests`, `github.list_commits`, `github.get_commit`, `github.search_commits`, etc. Reading a poisoned issue or PR via official `issue_read` / `pull_request_read` would fail to acquire `untrusted_content` if allowed in policy without updating `taint_sources`.
+4. **Strict Argument Adapters (`mcpsec_core/adapters.py`):**
+   - All 6 shared tools suffer schema drift (`perPage`, `query` vs `q`, `after`, `orderBy`, `fields`, `sha`, optional `path`), triggering `ERR_UNEXPECTED_ARGUMENT` fail-closed denials when any new official argument key is supplied.
+   - `github.add_issue_comment`, `github.issue_read`, `github.issue_write`, and `github.pull_request_read` have no adapters at all.
+5. **See [`docs/github_tool_mapping.md`](file:///c:/Users/BIT%20PATNA/ai-agent-firewall/docs/github_tool_mapping.md)** for the complete 46-tool policy, capability, taint-class (`U`/`P`/`T`), and C6 breakage table.
