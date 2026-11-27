@@ -733,6 +733,7 @@ def test_meta_no_config_starts_with_unimplemented_protection() -> None:
         "capabilities": "tests/test_policy.py::test_rule3_capabilities_tag_outside_closed_set",
         "policies": "tests/test_policy.py::test_check_policy_path_and_domain_allowlists",
         "taint_sources": "tests/test_flow_truth_table.py::test_truth_table_non_network_tools",
+        "taint_exempt": "tests/test_policy_adr021.py::test_adr021_taint_exempt_validation_and_audit_logging",
         "flow_rules": "tests/test_flow_truth_table.py::test_truth_table_egress_with_unless_exemption",
         "approval": "tests/test_approvals.py::test_approval_lifecycle_and_idempotence",
         "pinning": "tests/test_pinning.py::test_strict_pinning_hides_unpinned_tool_and_denies_call",
@@ -764,6 +765,7 @@ policies:
 taint_sources:
   untrusted_content:
     - tool: fs.read_file
+    - tool: http.fetch
 flow_rules:
   - id: deny-untrusted-egress
     if_session_has: [untrusted_content]

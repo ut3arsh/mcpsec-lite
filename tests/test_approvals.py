@@ -298,7 +298,9 @@ policies:
       http.fetch:       {}
 
 taint_sources:
-  untrusted_content: [{ tool: github.get_issue }]
+  untrusted_content:
+    - { tool: github.get_issue }
+    - { tool: http.fetch }
 
 flow_rules:
   - id: appr-egress-untrusted

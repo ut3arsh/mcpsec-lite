@@ -48,6 +48,7 @@ policies:
 taint_sources:
   untrusted_content:
     - { tool: github.get_issue }
+    - { tool: http.fetch }
   private_data:
     - { tool: fs.read_file, args: { path: ["**/.env*", "**/secrets/**"] } }
 

@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from mcpsec_core.adapters import (
     extract_domain_arguments,
     extract_path_arguments,
+    get_builtin_taint_class,
     validate_tool_adapter_for_constraints,
     validate_unexpected_arguments,
 )
@@ -70,6 +71,11 @@ class TaintSourceEntryModel(PolicyBaseModel):
     args: dict[str, list[str]] | None = None
 
 
+class TaintExemptEntryModel(PolicyBaseModel):
+    tool: str
+    reason: str
+
+
 class FlowRuleUnlessModel(PolicyBaseModel):
     domain_allowlist: list[Any] | None = None
     path_allowlist: list[Any] | None = None
@@ -113,6 +119,7 @@ class RawPolicySchema(PolicyBaseModel):
     capabilities: dict[str, list[str]]
     policies: list[PolicyEntryModel]
     taint_sources: dict[str, list[TaintSourceEntryModel]] = Field(default_factory=dict)
+    taint_exempt: list[TaintExemptEntryModel] = Field(default_factory=list)
     flow_rules: list[FlowRuleModel] = Field(default_factory=list)
     approval: ApprovalConfigModel = Field(default_factory=ApprovalConfigModel)
     pinning: PinningConfigModel = Field(default_factory=PinningConfigModel)
@@ -178,6 +185,7 @@ class Policy:
     redaction: RedactionConfigModel
     compiled_flow_rules: tuple[CompiledFlowRule, ...] = ()
     taint_sources_by_tool: dict[str, tuple[CompiledTaintSource, ...]] = field(default_factory=dict)
+    taint_exempt: tuple[TaintExemptEntryModel, ...] = ()
 
 
 def validate_and_compile_policy(
@@ -550,6 +558,68 @@ def validate_and_compile_policy(
 
     frozen_taint_sources_by_tool = {k: tuple(v) for k, v in taint_sources_by_tool.items()}
 
+    # Rule 11 (ADR-021): Enforce untrusted_content taint_sources completeness for built-in U tools
+    exempt_tools_reasons: dict[str, str] = {}
+    for ex_idx, ex in enumerate(parsed_schema.taint_exempt):
+        ex_tool = ex.tool.strip()
+        ex_reason = ex.reason.strip()
+        if not ex_tool:
+            errors.append(
+                {
+                    "code": "ERR_INVALID_TAINT_EXEMPT",
+                    "path": f"taint_exempt[{ex_idx}].tool",
+                    "message": "taint_exempt entry must specify a non-empty tool identifier",
+                }
+            )
+        if not ex_reason:
+            errors.append(
+                {
+                    "code": "ERR_INVALID_TAINT_EXEMPT",
+                    "path": f"taint_exempt[{ex_idx}].reason",
+                    "message": (f"taint_exempt entry for '{ex.tool}' requires a non-empty reason"),
+                }
+            )
+        elif ex_tool:
+            exempt_tools_reasons[ex_tool] = ex_reason
+
+    allowed_tools_paths: dict[str, str] = {}
+    for p_idx, policy_entry in enumerate(parsed_schema.policies):
+        for tool_id in policy_entry.tools:
+            if tool_id not in allowed_tools_paths:
+                allowed_tools_paths[tool_id] = f"policies[{p_idx}].tools.{tool_id}"
+
+    declared_untrusted_tools = {
+        entry.tool for entry in parsed_schema.taint_sources.get("untrusted_content", [])
+    }
+    has_untrusted_flow_rule = any(
+        "untrusted_content" in f_rule.if_session_has for f_rule in parsed_schema.flow_rules
+    )
+
+    for tool_id, tool_path in allowed_tools_paths.items():
+        if get_builtin_taint_class(tool_id) != "U":
+            continue
+        if tool_id in declared_untrusted_tools or tool_id in exempt_tools_reasons:
+            continue
+        if has_untrusted_flow_rule:
+            errors.append(
+                {
+                    "code": "ERR_TAINT_SOURCE_MISSING",
+                    "path": tool_path,
+                    "message": (
+                        f"Tool '{tool_id}' is classified 'U' (untrusted_content) by built-in "
+                        f"table and allowlisted in policies while flow_rules reference "
+                        f"'untrusted_content', but is missing from taint_sources.untrusted_content "
+                        f"(and not exempted in taint_exempt)"
+                    ),
+                }
+            )
+        else:
+            warnings.append(
+                f"WARNING: Tool '{tool_id}' is classified 'U' (untrusted_content) and allowlisted "
+                f"in policies without appearing in taint_sources.untrusted_content "
+                f"(no flow_rules currently reference 'untrusted_content')"
+            )
+
     # Compile flow rules
     compiled_flow_rules: list[CompiledFlowRule] = []
     for f_rule in parsed_schema.flow_rules:
@@ -634,6 +704,10 @@ def validate_and_compile_policy(
             "serialize_calls is false; concurrent calls may cause taint race conditions"
         )
 
+    # 4. Valid taint_exempt entries (ADR-021)
+    for ex_tool, ex_reason in exempt_tools_reasons.items():
+        warnings.append(f"WARNING: taint_exempt active for '{ex_tool}' (reason: {ex_reason})")
+
     policy_obj = Policy(
         version=parsed_schema.version,
         mode=parsed_schema.mode,
@@ -650,6 +724,7 @@ def validate_and_compile_policy(
         redaction=parsed_schema.redaction,
         compiled_flow_rules=tuple(compiled_flow_rules),
         taint_sources_by_tool=frozen_taint_sources_by_tool,
+        taint_exempt=tuple(parsed_schema.taint_exempt),
     )
 
     return policy_obj, warnings

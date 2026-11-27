@@ -382,6 +382,9 @@ policies:
   - agent: "*"
     tools:
       http.fetch: {}
+taint_sources:
+  untrusted_content:
+    - { tool: http.fetch }
 flow_rules:
   - id: deny-egress
     if_session_has: [untrusted_content]

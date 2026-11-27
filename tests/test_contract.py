@@ -15,9 +15,12 @@ from mcp.client.stdio import StdioServerParameters, stdio_client
 
 from mcpsec_core.adapters import (
     _BUILTIN_ADAPTERS,
+    BUILTIN_TOOL_TAINT_CLASSES,
     OFFICIAL_GITHUB_TOOL_TABLE,
+    UNTRUSTED_CONTENT_BUILTIN_TOOLS,
     OfficialGitHubToolSpec,
     get_adapter,
+    get_builtin_taint_class,
     get_official_github_tool_spec,
 )
 
@@ -224,6 +227,15 @@ def test_github_official_adapter_and_table_conformance_with_snapshot() -> None:
             del t["inputSchema"]["properties"]["perPage"]
     with pytest.raises(AssertionError, match="extra_in_table"):
         _assert_official_table_matches_snapshot(OFFICIAL_GITHUB_TOOL_TABLE, removed_arg_snap)
+
+    # 5. Built-in taint classification table matches all 46 official tools + fetch/http U tools
+    expected_u = {
+        spec.tool_id for spec in OFFICIAL_GITHUB_TOOL_TABLE.values() if spec.taint_class == "U"
+    } | {"fetch.fetch", "http.fetch"}
+    assert UNTRUSTED_CONTENT_BUILTIN_TOOLS == frozenset(expected_u)
+    assert len(UNTRUSTED_CONTENT_BUILTIN_TOOLS) == 21
+    assert BUILTIN_TOOL_TAINT_CLASSES["fetch.fetch"] == "U"
+    assert get_builtin_taint_class("http.fetch") == "U"
 
 
 @pytest.mark.live

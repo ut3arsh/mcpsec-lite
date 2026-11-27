@@ -1,0 +1,32 @@
+Original mcpsec_core/policy.py sha256=3aba6bed2390a3c425a2b5982a8f9b00b1f10e773aa53e41b13d60b8ccab64cd
+
+=== Mutation (a) skip ADR-021 loop check -> exit=1 (KILLED) ===
+FAILED tests/test_policy_adr021.py::test_adr021_truth_table_missing_declared_exempt[audit-github.search_users]
+FAILED tests/test_policy_adr021.py::test_adr021_truth_table_missing_declared_exempt[audit-github.ui_get]
+FAILED tests/test_policy_adr021.py::test_adr021_truth_table_missing_declared_exempt[audit-http.fetch]
+FAILED tests/test_policy_adr021.py::test_adr021_agent_specific_allowlist_checked
+FAILED tests/test_policy_adr021.py::test_adr021_no_untrusted_flow_rule_emits_loud_warning
+FAILED tests/test_policy_adr021.py::test_adr021_property_random_allowlists_and_exemptions
+FAILED tests/test_policy_adr021.py::test_adr021_committed_configs_and_examples_audit
+46 failed, 3 passed in 12.48s
+
+=== Mutation (b) accept empty taint_exempt reason -> exit=1 (KILLED) ===
+...........................................F.....                        [100%]
+================================== FAILURES ===================================
+E   Failed: DID NOT RAISE PolicyError
+C:\Users\BIT PATNA\ai-agent-firewall\tests\test_policy_adr021.py:154: Failed: DID NOT RAISE PolicyError
+=========================== short test summary info ===========================
+FAILED tests/test_policy_adr021.py::test_adr021_taint_exempt_validation_and_audit_logging
+1 failed, 48 passed in 2.69s
+
+=== Mutation (c) ignore non-wildcard agent allowlists -> exit=1 (KILLED) ===
+      'github.get_file_contents'
+      Use -v to get more diff
+C:\Users\BIT PATNA\ai-agent-firewall\tests\test_policy_adr021.py:397: AssertionError: assert set() == {'github.get_...repositories'}
+=========================== short test summary info ===========================
+FAILED tests/test_policy_adr021.py::test_adr021_agent_specific_allowlist_checked
+FAILED tests/test_policy_adr021.py::test_adr021_property_random_allowlists_and_exemptions
+FAILED tests/test_policy_adr021.py::test_adr021_committed_configs_and_examples_audit
+3 failed, 46 passed in 10.58s
+
+Restored mcpsec_core/policy.py sha256=3aba6bed2390a3c425a2b5982a8f9b00b1f10e773aa53e41b13d60b8ccab64cd (exact match)

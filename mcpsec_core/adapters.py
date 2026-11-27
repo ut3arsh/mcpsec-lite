@@ -938,6 +938,23 @@ _BUILTIN_ADAPTERS: dict[str, ToolAdapter] = {
     ),
 }
 
+# Reviewed built-in taint classifications stored strictly as static data (ADR-021):
+# covers all 46 official github-mcp-server v2.3.0 tools plus built-in HTTP/Fetch U tools.
+BUILTIN_TOOL_TAINT_CLASSES: dict[str, Literal["U", "P", "T"]] = {
+    **{spec.tool_id: spec.taint_class for spec in OFFICIAL_GITHUB_TOOL_TABLE.values()},
+    "fetch.fetch": "U",
+    "http.fetch": "U",
+}
+
+UNTRUSTED_CONTENT_BUILTIN_TOOLS: frozenset[str] = frozenset(
+    tool_id for tool_id, cls in BUILTIN_TOOL_TAINT_CLASSES.items() if cls == "U"
+)
+
+
+def get_builtin_taint_class(tool_id: str) -> Literal["U", "P", "T"] | None:
+    """Return the built-in static taint class ('U', 'P', or 'T') for tool_id, if known."""
+    return BUILTIN_TOOL_TAINT_CLASSES.get(tool_id)
+
 
 def get_adapter(tool_id: str) -> ToolAdapter | None:
     """Retrieve the ToolAdapter for a tool_id (<server>.<tool>)."""

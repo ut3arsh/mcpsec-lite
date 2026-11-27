@@ -1,0 +1,41 @@
+ADR-021 Policy Load Audit (benchmark/configs/*.yaml + examples/policies/)
+
+PASS   benchmark/configs/C0.yaml | mode=audit | sha256=0e964bca3153... | total_warnings=8 | adr021_warnings=4
+       - WARNING: Tool 'fetch.fetch' is classified 'U' (untrusted_content) and allowlisted in policies without appearing in taint_sources.untrusted_content (no flow_rules currently reference 'untrusted_content')
+       - WARNING: Tool 'http.fetch' is classified 'U' (untrusted_content) and allowlisted in policies without appearing in taint_sources.untrusted_content (no flow_rules currently reference 'untrusted_content')
+       - WARNING: Tool 'github.list_issues' is classified 'U' (untrusted_content) and allowlisted in policies without appearing in taint_sources.untrusted_content (no flow_rules currently reference 'untrusted_content')
+       - WARNING: Tool 'github.search_repositories' is classified 'U' (untrusted_content) and allowlisted in policies without appearing in taint_sources.untrusted_content (no flow_rules currently reference 'untrusted_content')
+PASS   benchmark/configs/C1.yaml | mode=enforce | sha256=9d6fe8d77e85... | total_warnings=8 | adr021_warnings=4
+       - WARNING: Tool 'fetch.fetch' is classified 'U' (untrusted_content) and allowlisted in policies without appearing in taint_sources.untrusted_content (no flow_rules currently reference 'untrusted_content')
+       - WARNING: Tool 'http.fetch' is classified 'U' (untrusted_content) and allowlisted in policies without appearing in taint_sources.untrusted_content (no flow_rules currently reference 'untrusted_content')
+       - WARNING: Tool 'github.list_issues' is classified 'U' (untrusted_content) and allowlisted in policies without appearing in taint_sources.untrusted_content (no flow_rules currently reference 'untrusted_content')
+       - WARNING: Tool 'github.search_repositories' is classified 'U' (untrusted_content) and allowlisted in policies without appearing in taint_sources.untrusted_content (no flow_rules currently reference 'untrusted_content')
+FAIL   benchmark/configs/C2.yaml | codes=['ERR_TAINT_SOURCE_MISSING'] | count=1
+       - [ERR_TAINT_SOURCE_MISSING] policies[0].tools.github.list_issues: Tool 'github.list_issues' is classified 'U' (untrusted_content) by built-in table and allowlisted in policies while flow_rules reference 'untrusted_content', but is missing from taint_sources.untrusted_content (and not exempted in taint_exempt)
+FAIL   benchmark/configs/C2s.yaml | codes=['ERR_TAINT_SOURCE_MISSING'] | count=1
+       - [ERR_TAINT_SOURCE_MISSING] policies[0].tools.github.list_issues: Tool 'github.list_issues' is classified 'U' (untrusted_content) by built-in table and allowlisted in policies while flow_rules reference 'untrusted_content', but is missing from taint_sources.untrusted_content (and not exempted in taint_exempt)
+FAIL   benchmark/configs/C3.yaml | codes=['ERR_TAINT_SOURCE_MISSING'] | count=1
+       - [ERR_TAINT_SOURCE_MISSING] policies[0].tools.github.list_issues: Tool 'github.list_issues' is classified 'U' (untrusted_content) by built-in table and allowlisted in policies while flow_rules reference 'untrusted_content', but is missing from taint_sources.untrusted_content (and not exempted in taint_exempt)
+FAIL   benchmark/configs/C4.yaml | codes=['ERR_TAINT_SOURCE_MISSING'] | count=1
+       - [ERR_TAINT_SOURCE_MISSING] policies[0].tools.github.list_issues: Tool 'github.list_issues' is classified 'U' (untrusted_content) by built-in table and allowlisted in policies while flow_rules reference 'untrusted_content', but is missing from taint_sources.untrusted_content (and not exempted in taint_exempt)
+PASS   benchmark/configs/C5.yaml | mode=enforce | sha256=fb4c23d81eb3... | total_warnings=2 | adr021_warnings=0
+PASS   benchmark/configs/C6.yaml | mode=enforce | sha256=8529d7755217... | total_warnings=2 | adr021_warnings=0
+PASS   benchmark/configs/C7.yaml | mode=enforce | sha256=f6a569dca136... | total_warnings=2 | adr021_warnings=0
+FAIL   benchmark/configs/E0.yaml | codes=['ERR_TAINT_SOURCE_MISSING'] | count=1
+       - [ERR_TAINT_SOURCE_MISSING] policies[0].tools.github.list_issues: Tool 'github.list_issues' is classified 'U' (untrusted_content) by built-in table and allowlisted in policies while flow_rules reference 'untrusted_content', but is missing from taint_sources.untrusted_content (and not exempted in taint_exempt)
+FAIL   benchmark/configs/E1.yaml | codes=['ERR_TAINT_SOURCE_MISSING'] | count=1
+       - [ERR_TAINT_SOURCE_MISSING] policies[0].tools.github.list_issues: Tool 'github.list_issues' is classified 'U' (untrusted_content) by built-in table and allowlisted in policies while flow_rules reference 'untrusted_content', but is missing from taint_sources.untrusted_content (and not exempted in taint_exempt)
+FAIL   benchmark/configs/E2.yaml | codes=['ERR_TAINT_SOURCE_MISSING'] | count=1
+       - [ERR_TAINT_SOURCE_MISSING] policies[0].tools.github.list_issues: Tool 'github.list_issues' is classified 'U' (untrusted_content) by built-in table and allowlisted in policies while flow_rules reference 'untrusted_content', but is missing from taint_sources.untrusted_content (and not exempted in taint_exempt)
+FAIL   benchmark/configs/E3.yaml | codes=['ERR_TAINT_SOURCE_MISSING'] | count=1
+       - [ERR_TAINT_SOURCE_MISSING] policies[0].tools.github.list_issues: Tool 'github.list_issues' is classified 'U' (untrusted_content) by built-in table and allowlisted in policies while flow_rules reference 'untrusted_content', but is missing from taint_sources.untrusted_content (and not exempted in taint_exempt)
+FAIL   benchmark/configs/E4.yaml | codes=['ERR_TAINT_SOURCE_MISSING'] | count=1
+       - [ERR_TAINT_SOURCE_MISSING] policies[0].tools.github.list_issues: Tool 'github.list_issues' is classified 'U' (untrusted_content) by built-in table and allowlisted in policies while flow_rules reference 'untrusted_content', but is missing from taint_sources.untrusted_content (and not exempted in taint_exempt)
+PASS   benchmark/configs/E4b.yaml | mode=enforce | sha256=53e97bbfdc80... | total_warnings=2 | adr021_warnings=0
+PASS   benchmark/configs/E5.yaml | mode=enforce | sha256=cd71b6ffbcdc... | total_warnings=2 | adr021_warnings=0
+FAIL   examples/policies/dev-agent.yaml | codes=['ERR_NO_ARGUMENT_ADAPTER', 'ERR_TAINT_SOURCE_MISSING', 'ERR_TAINT_SOURCE_MISSING', 'ERR_TAINT_SOURCE_MISSING', 'ERR_TAINT_SOURCE_MISSING'] | count=5
+       - [ERR_NO_ARGUMENT_ADAPTER] policies[0].tools.github.get_file_contents: Tool 'github.get_file_contents' declares path_allowlist but adapter has no path arguments
+       - [ERR_TAINT_SOURCE_MISSING] policies[0].tools.github.get_file_contents: Tool 'github.get_file_contents' is classified 'U' (untrusted_content) by built-in table and allowlisted in policies while flow_rules reference 'untrusted_content', but is missing from taint_sources.untrusted_content (and not exempted in taint_exempt)
+       - [ERR_TAINT_SOURCE_MISSING] policies[0].tools.github.list_issues: Tool 'github.list_issues' is classified 'U' (untrusted_content) by built-in table and allowlisted in policies while flow_rules reference 'untrusted_content', but is missing from taint_sources.untrusted_content (and not exempted in taint_exempt)
+       - [ERR_TAINT_SOURCE_MISSING] policies[0].tools.github.list_pull_requests: Tool 'github.list_pull_requests' is classified 'U' (untrusted_content) by built-in table and allowlisted in policies while flow_rules reference 'untrusted_content', but is missing from taint_sources.untrusted_content (and not exempted in taint_exempt)
+       - [ERR_TAINT_SOURCE_MISSING] policies[0].tools.github.search_repositories: Tool 'github.search_repositories' is classified 'U' (untrusted_content) by built-in table and allowlisted in policies while flow_rules reference 'untrusted_content', but is missing from taint_sources.untrusted_content (and not exempted in taint_exempt)

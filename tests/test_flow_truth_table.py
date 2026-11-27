@@ -40,6 +40,7 @@ policies:
 taint_sources:
   untrusted_content:
     - { tool: http.get_docs }
+    - { tool: http.fetch }
   private_data:
     - { tool: fs.read_file }
 
