@@ -26,13 +26,14 @@ def _extract_table_cells(markdown: str, config_name: str) -> list[str]:
 
 
 def test_readme_approvals_per_task_and_scope_match_generated_report() -> None:
-    """Assert README.md Approvals/Task figures (overall C0-C6 + per-set C6 v1..v4) match generated report."""
+    """Assert README.md Approvals/Task figures (C0-C6 baseline + C7 freeze candidate v1..v4) match generated reports."""
     readme_text = Path("README.md").read_text(encoding="utf-8")
 
-    trials_path = Path("benchmark/results/dev_20261110_c6/trials.csv")
-    run_json_path = Path("benchmark/results/dev_20261110_c6/run.json")
-    trials = load_trials(trials_path)
-    run_config = load_run_config(run_json_path, trials_path)
+    trials_c6 = Path("benchmark/results/dev_20261110_c6/trials.csv")
+    run_c6 = Path("benchmark/results/dev_20261110_c6/run.json")
+    trials_c7 = Path("benchmark/results/dev_20261127_c7_official/trials.csv")
+    run_c7 = Path("benchmark/results/dev_20261127_c7_official/run.json")
+
     attack_manifest = load_manifest(Path("benchmark/attacks/dev/manifest.json"))
     benign_manifests = [
         load_manifest(Path("benchmark/benign/manifest.json")),
@@ -40,17 +41,29 @@ def test_readme_approvals_per_task_and_scope_match_generated_report() -> None:
         load_manifest(Path("benchmark/benign/manifest_v3.json")),
         load_manifest(Path("benchmark/benign/manifest_v4.json")),
     ]
-    generated = generate_analysis_report(
-        trials=trials,
-        run_config=run_config,
+    generated_c6 = generate_analysis_report(
+        trials=load_trials(trials_c6),
+        run_config=load_run_config(run_c6, trials_c6),
+        attack_manifest=attack_manifest,
+        benign_manifests=benign_manifests,
+    )
+    generated_c7 = generate_analysis_report(
+        trials=load_trials(trials_c7),
+        run_config=load_run_config(run_c7, trials_c7),
         attack_manifest=attack_manifest,
         benign_manifests=benign_manifests,
     )
 
-    # 1. Verify overall C0, C1, C2, C5, C6 Approvals/Task figures in README match generated Section 1 table
-    for cfg in ("C0", "C1", "C2", "C5", "C6"):
-        # Extract generated '(d) Approvals / Task' cell: e.g. '0.40 (20/50) PASS'
-        gen_cells = _extract_table_cells(generated, cfg)
+    # 1. Verify overall C0, C1, C2, C5, C6 baseline and C7 candidate Approvals/Task in README
+    for cfg, source_report in [
+        ("C0", generated_c6),
+        ("C1", generated_c6),
+        ("C2", generated_c6),
+        ("C5", generated_c6),
+        ("C6", generated_c6),
+        ("C7", generated_c7),
+    ]:
+        gen_cells = _extract_table_cells(source_report, cfg)
         gen_bar_d = gen_cells[4]
         m_gen = re.match(r"(\d+\.\d+\s+\(\d+/\d+\))", gen_bar_d)
         assert m_gen is not None, f"Unexpected generated format for {cfg}: {gen_bar_d}"
@@ -62,16 +75,17 @@ def test_readme_approvals_per_task_and_scope_match_generated_report() -> None:
             f"README Approvals/Task mismatch for {cfg}: got {readme_bar_d!r}, expected {expected_val!r}"
         )
 
-    # 2. Verify C6 per-set (v1, v2, v3, v4, Combined) Approvals/Task match generated Bar (d) breakdown table
-    gen_perset_section = generated.split("### Bar (d) Approvals / Task Breakdown Per Benign Set")[1]
-    gen_perset_c6 = _extract_table_cells(gen_perset_section, "C6")
-    # Columns: Configuration | v1 | v2 | v3 | v4 | Combined | All Sets <= 1.0
+    # 2. Verify C7 per-set (v1, v2, v3, v4, Combined) Approvals/Task match generated Bar (d) breakdown table
+    gen_perset_section = generated_c7.split(
+        "### Bar (d) Approvals / Task Breakdown Per Benign Set"
+    )[1]
+    gen_perset_c7 = _extract_table_cells(gen_perset_section, "C7")
     expected_perset = {
-        "v1": gen_perset_c6[1],  # e.g. "0.28 (9/32)"
-        "v2": gen_perset_c6[2],
-        "v3": gen_perset_c6[3],
-        "v4": gen_perset_c6[4],
-        "Combined": gen_perset_c6[5],
+        "v1": gen_perset_c7[1],
+        "v2": gen_perset_c7[2],
+        "v3": gen_perset_c7[3],
+        "v4": gen_perset_c7[4],
+        "Combined": gen_perset_c7[5],
     }
 
     for set_label, expected_ratio in expected_perset.items():
@@ -81,14 +95,17 @@ def test_readme_approvals_per_task_and_scope_match_generated_report() -> None:
             re.IGNORECASE,
         )
         assert pattern.search(readme_text), (
-            f"README missing or mismatched C6 {set_label} Approvals/task figure `{expected_ratio}`"
+            f"README missing or mismatched C7 {set_label} Approvals/task figure `{expected_ratio}`"
         )
 
     # 3. Verify honesty/scope requirements in README.md
     lowered = readme_text.lower()
     assert "development set, scripted attacker, not final benchmark results" in lowered
-    assert "default profile c6 (candidate, owner has not tagged)" in lowered
-    assert "fake github server" in lowered
+    assert "default profile c7 (candidate, owner has not tagged)" in lowered
+    assert "4 of 46 official tools" in lowered
+    assert "--read-only" in lowered and "46" in lowered and "27" in lowered
+    assert "mcpsec-pin approve" in lowered
+    assert "prompts" in lowered and "resources" in lowered and "completions" in lowered
     assert "verified" not in lowered, "README must not claim 'verified'"
     assert "frozen" not in lowered, (
         "README must use 'candidate, owner has not tagged' rather than 'frozen'"
