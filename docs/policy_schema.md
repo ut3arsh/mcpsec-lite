@@ -18,6 +18,7 @@ serialize_calls: true        # serialize calls per session (see DESIGN §4.4)
 capabilities: { ... }        # §2
 policies: [ ... ]            # §3
 taint_sources: { ... }       # §4
+taint_exempt: [ ... ]        # §4.1
 flow_rules: [ ... ]          # §5
 approval: { ... }            # §6
 pinning: { ... }             # §7
@@ -33,6 +34,7 @@ redaction: { ... }           # §9
 | `capabilities` | map | yes | — | Tool → capability tags. |
 | `policies` | list | yes | — | Per-agent allowlists. |
 | `taint_sources` | map | no | `{}` | Without it, flow rules never fire. |
+| `taint_exempt` | list | no | `[]` | Explicit reasoned exemptions from Rule 11 untrusted taint-source check. |
 | `flow_rules` | list | no | `[]` | |
 | `approval` | map | no | see §6 | |
 | `pinning` | map | no | `{mode: audit}` | |
@@ -112,6 +114,18 @@ taint_sources:
 - Labels are applied only on **successful** calls (errors do not taint).
 - Labels are monotonic within a session; only an approval (§6) can clear them.
 - Labels come from declared sources only. They are never inferred from content.
+
+### 4.1 Explicit taint-source exemptions (`taint_exempt`)
+Explicit escape hatch from Validation Rule 11 for built-in `U`-classified tools (`untrusted_content`) intentionally treated as non-tainting (e.g., an internal mirror or non-adversarial endpoint):
+
+```yaml
+taint_exempt:
+  - tool: http.fetch
+    reason: "Restricted solely to operator-owned localhost telemetry endpoint"
+```
+
+- Each item requires `tool` (non-empty string) and `reason` (non-empty, non-whitespace string; empty reasons fail closed with `ERR_INVALID_TAINT_EXEMPT`).
+- Every valid `taint_exempt` entry is recorded in `policy_loaded.warnings` at startup with the tool ID and operator reason.
 
 ## 5. `flow_rules`
 
@@ -229,8 +243,9 @@ The loader rejects the policy (and the proxy exits non-zero) when:
 8. A constraint is set on a tool with no argument mapping, or an unexpected argument is passed to a constrained tool (`ERR_UNEXPECTED_ARGUMENT`).
 9. A glob or regex fails to compile.
 10. In `mode: enforce`, unenforced policy features (`flow_rules`, `taint_sources`, or `pinning.mode: strict`) are configured (`ERR_NOT_YET_ENFORCED`).
+11. Any tool allowlisted in `policies` (any agent) whose built-in static table classification is `U` (the `19` official `github-mcp-server v2.3.0` `U` tools plus `fetch.fetch` and `http.fetch`) is absent from `taint_sources.untrusted_content` while any `flow_rules` entry includes `untrusted_content` in `if_session_has`, unless listed in `taint_exempt` with a non-empty `reason` (`ERR_TAINT_SOURCE_MISSING` naming the tool; empty/invalid `taint_exempt` entries fail closed with `ERR_INVALID_TAINT_EXEMPT`).
 
-Warnings (proxy starts, logs at startup): a `taint_source` label is never referenced by any flow rule; a capability tag is never referenced by any flow rule; `serialize_calls: false`; unenforced features configured in `mode: audit`.
+Warnings (proxy starts, logs at startup in `policy_loaded.warnings`): a `taint_source` label is never referenced by any flow rule; a capability tag is never referenced by any flow rule; `serialize_calls: false`; unenforced features configured in `mode: audit`; a built-in `U`-classified tool allowlisted in `policies` lacks a `taint_sources.untrusted_content` entry (and is not in `taint_exempt`) when no `flow_rules` entry references `untrusted_content`; any valid `taint_exempt` override (records tool and reason).
 
 ## 11. Complete minimal example
 

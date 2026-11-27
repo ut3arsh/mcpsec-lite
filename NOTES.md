@@ -203,10 +203,4 @@ Measured via `tests/test_perf.py` on a policy containing **1,000 rules across 10
    - *Fail-Closed Choices (ADR-020)*:
      - Only the `46` default `stdio` tools in `tests/fixtures/github.tools.official.json` are registered in `OFFICIAL_GITHUB_TOOL_TABLE` and `_BUILTIN_ADAPTERS`; all other GitHub tools (e.g., `--toolsets all` additions, deprecated npm names, handwritten mock names) remain unknown and denied by default policy (`C7.yaml`).
      - Remote GitHub `path` parameters (`get_file_contents`, `create_or_update_file`, `delete_file`, `add_comment_to_pending_review`, `list_commits`) set `path_args=()` (disagreement with pre-5.18d `adapters.py`'s `path_args=("path",)` on `get_file_contents`) because `extract_path_arguments` evaluates local OS paths rather than remote GitHub repo trees and `v2.3.0` makes `path` optional.
-   - *Proposed Spec Patch (`docs/policy_schema.md` §10 Rule 11 — deferred to Proposed ADR-021; NOT implemented in 5.18d because `validate_and_compile_policy` edits are out of chunk scope)*:
-     ```markdown
-     11. (Proposed ADR-021) In `mode: enforce`, if `flow_rules` reference `untrusted_content`,
-         any tool allowed under `policies` whose reviewed adapter table classification is `U`
-         and lacks an entry in `taint_sources.untrusted_content` is rejected at load time
-         (`ERR_TAINT_SOURCE_MISSING`).
-     ```
+   - *ADR-021 Accepted & Implemented (Chunk 5.18e)*: Accepted in [`docs/decisions.md`](file:///c:/Users/BIT%20PATNA/ai-agent-firewall/docs/decisions.md) and applied to [`docs/policy_schema.md`](file:///c:/Users/BIT%20PATNA/ai-agent-firewall/docs/policy_schema.md) (§1, §4.1, §10 Rule 11). Enforces at policy load that whenever any `flow_rules` entry references `untrusted_content`, every tool allowlisted under `policies` (any agent) whose static table classification in `mcpsec_core/adapters.py` is `U` (the `19` official `github-mcp-server v2.3.0` `U` tools plus `fetch.fetch` and `http.fetch`) appears in `taint_sources.untrusted_content` or in `taint_exempt` with a non-empty reason (recorded in `policy_loaded.warnings`); otherwise raises `PolicyError` (`ERR_TAINT_SOURCE_MISSING`). When no flow rule references `untrusted_content`, emits a loud `policy_loaded` warning instead of rejecting load.

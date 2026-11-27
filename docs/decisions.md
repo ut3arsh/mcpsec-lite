@@ -172,10 +172,17 @@ Format: **Status · Context · Decision · Consequences.**
 - All 46 default official `github-mcp-server v2.3.0` tools have audited static definitions tested offline in CI against the captured snapshot.
 - `C6` (handwritten) and `C7` (official) can be compared directly on identical dev scenarios via `--github-schema official`.
 
-## ADR-021 (Proposed) — Fail-Closed Policy Rejection for Official Read-Tool Taint Holes
-**Status:** Proposed · 2026-11-25 *(Not implemented in Chunk 5.18d — deferred because enforcement requires core logic changes in `mcpsec_core/policy.py`)*
-**Context:** If a deployment allowlists an official `U`-classified GitHub read tool (e.g., `github.issue_read` or `github.pull_request_read`) in `capabilities` and `policies` while using `flow_rules` referencing `untrusted_content`, omitting that tool from `taint_sources.untrusted_content` silently skips tainting ("taint hole").
-**Proposed Decision:** When validating a policy whose `mode == "enforce"` and whose `flow_rules` reference `untrusted_content`, `validate_and_compile_policy` in `mcpsec_core/policy.py` should reject (`ERR_TAINT_SOURCE_MISSING`) any allowed tool in `OFFICIAL_GITHUB_TOOL_TABLE` whose `taint_class == "U"` is absent from `taint_sources.untrusted_content` (and correspondingly reject `P`-classified reads absent from `private_data` when referenced). Scoping to policies with active `flow_rules` referencing the label preserves static policy configs like `C1`.
-**Consequences:** Prevents accidental taint-source omissions when migrating or customizing policies for `github-mcp-server v2.3.0`, without mutating `mcpsec_core/policy.py` during data/config Chunk 5.18d.
+## ADR-021 — Fail-Closed Policy Rejection for Untrusted Built-in Tool Taint Holes
+**Status:** Accepted · 2026-11-27 *(Implemented in Chunk 5.18e per Owner Decision, extending the Chunk 5.18d proposal)*
+**Context:**
+If a policy allowlists a built-in tool classified as untrusted external content (`U` — the `19` official `github-mcp-server v2.3.0` `U` tools plus `fetch.fetch` and `http.fetch`) under `policies` for any agent while defining `flow_rules` whose `if_session_has` includes `untrusted_content`, omitting that tool from `taint_sources.untrusted_content` silently bypasses taint tracking ("claimed protection not running").
+**Decision:**
+1. Store static built-in taint classifications as pure data in [`mcpsec_core/adapters.py`](file:///c:/Users/BIT%20PATNA/ai-agent-firewall/mcpsec_core/adapters.py) covering all `46` official `github-mcp-server v2.3.0` tools (derived directly from `OFFICIAL_GITHUB_TOOL_TABLE`) plus `"fetch.fetch": "U"` and `"http.fetch": "U"` (`21` `U` tools total).
+2. In `validate_and_compile_policy` ([`mcpsec_core/policy.py`](file:///c:/Users/BIT%20PATNA/ai-agent-firewall/mcpsec_core/policy.py)), inspect allowed tools across **every** entry in `policies` (specific agent rules as well as `"*"`). If any `flow_rules` entry includes `"untrusted_content"` in `if_session_has`, every `U`-classified allowed tool MUST appear in `taint_sources.untrusted_content` OR have an explicit exemption in `taint_exempt: [{tool: <id>, reason: "<non-empty>"}]`; otherwise fail closed at load time with `PolicyError` (`ERR_TAINT_SOURCE_MISSING`) naming the tool.
+3. Validate `taint_exempt` fail closed: unknown keys fail with `ERR_UNKNOWN_KEY`; missing/empty/whitespace `tool` or `reason` fails with `ERR_SCHEMA` or `ERR_INVALID_TAINT_EXEMPT`. Every valid `taint_exempt` entry emits a `policy_loaded` warning recording the exempted tool and its operator reason.
+4. When no `flow_rules` entry includes `"untrusted_content"` in `if_session_has` (e.g., `C0`, `C1`), emit a loud `policy_loaded` warning naming each untagged `U` tool instead of rejecting load.
+**Consequences:**
+- Eliminates silent `untrusted_content` taint-source omissions across all agents and enforcement modes while keeping static policies (`C0`, `C1`) loadable with visible startup warnings and providing an auditable escape hatch (`taint_exempt`) logged to `policy_loaded.warnings`.
+- Legacy pre-audit configs (`C2`, `C2s`, `C3`, `C4`, `E0`–`E4`) that allow `github.list_issues` with `untrusted_content` flow rules but omitted `github.list_issues` from `taint_sources` now fail validation cleanly instead of running with a silent taint hole; registered configs remain untouched.
 
 
