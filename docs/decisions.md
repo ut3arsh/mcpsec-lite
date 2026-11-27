@@ -185,4 +185,17 @@ If a policy allowlists a built-in tool classified as untrusted external content 
 - Eliminates silent `untrusted_content` taint-source omissions across all agents and enforcement modes while keeping static policies (`C0`, `C1`) loadable with visible startup warnings and providing an auditable escape hatch (`taint_exempt`) logged to `policy_loaded.warnings`.
 - Legacy pre-audit configs (`C2`, `C2s`, `C3`, `C4`, `E0`–`E4`) that allow `github.list_issues` with `untrusted_content` flow rules but omitted `github.list_issues` from `taint_sources` now fail validation cleanly instead of running with a silent taint hole; registered configs remain untouched.
 
+## ADR-022 — Promote `C7` as Freeze Candidate Default Profile & Retain `C6` as Baseline
+**Status:** Accepted · 2026-11-27
+**Context:**
+1. Under ADR-020, `C7` (`benchmark/configs/C7.yaml`) aligns `C6` to official [`github/github-mcp-server v2.3.0`](file:///c:/Users/BIT%20PATNA/ai-agent-firewall/tests/fixtures/github.tools.official.json) schemas (`benchmark/github_official_map.json`) while covering all `19` official `U`-classified GitHub read tools in `taint_sources.untrusted_content`, and achieves `166/166` `(status, blocking_layer, rule_id)` equivalence (`0/166` mismatches) with `C6` under both `deny_all` and `approve_all` (verified pre- and post-ADR-021 in [`docs/evidence/5.18e/equivalence_c6_vs_c7.md`](file:///c:/Users/BIT%20PATNA/ai-agent-firewall/docs/evidence/5.18e/equivalence_c6_vs_c7.md)).
+2. Tracked vs runtime pin store hygiene: `benchmark/configs/pins.json` is referenced as a default runtime store path in strict configs (`C4`, `C6`, `C7`) and `.gitignore` ignores `pins.json` and `*.lock`. Auditing git history confirms `benchmark/configs/pins.json` was never tracked (`git ls-files` empty), and `benchmark/dev/benchmark_dev.py` uses isolated per-schema pin files under `scratch_dev_runs/pins_{github_schema}.json` rather than `benchmark/configs/pins.json`.
+**Decision:**
+1. Adopt **`C7`** (`benchmark/configs/C7.yaml`) as the frozen default / `v0.2-frozen` freeze candidate profile (superseding ADR-019's designation of `C6` as default), while preserving **`C6`** (`benchmark/configs/C6.yaml`) byte-for-byte unchanged as the handwritten mock-names baseline (`273b22f`).
+2. Keep `C0`–`C6`, `E4b`, and `E5` untouched on disk for ablation and equivalence continuity.
+3. Record that `benchmark/configs/pins.json` is not used by dev benchmark runs, remains untracked and gitignored (`pins.json` / `*.lock` in `.gitignore`, so no `git rm --cached` is required), and remove stale local runtime copies (`benchmark/configs/pins.json`, `pins.lock`) from `benchmark/configs/`.
+**Consequences:**
+- Pre-freeze integrity tracking (`scripts/freeze_manifest.py`) hashes both `C7.yaml` (`f962612`) and `C6.yaml` (`273b22f`), plus `benchmark/github_official_map.json`, `tests/fixtures/github.tools.official.json`, and `mcpsec_core/adapters.py` (`OFFICIAL_GITHUB_TOOL_TABLE` + `BUILTIN_TOOL_TAINT_CLASSES`).
+- Operator documentation ([`docs/operating_with_github_mcp.md`](file:///c:/Users/BIT%20PATNA/ai-agent-firewall/docs/operating_with_github_mcp.md)) covers `--read-only`, `--toolsets`, strict pinning (`mcpsec-pin approve`), unsupported MCP surfaces, and ADR-021 taint completeness.
+
 
