@@ -15,6 +15,7 @@
 - **Plain unit suite (`pytest -rsx`)**: 314 passed, 1 skipped, 8 deselected, 2 xfailed in 41.07s (< 60s).
 - **Full suite (`pytest -rsx -m "integration or not integration"`)**: 320 passed, 3 skipped, 2 xfailed in 57.19s.
 - **Static & Supply-Chain**: `mypy --strict` clean (87 source files), `ruff check` clean, `ruff format` clean (157 files), `pip-audit` clean (`No known vulnerabilities found`).
+- **Dual-OS CI Gate (Run `46055135980`, `https://github.com/ut3arsh/mcpsec-lite/actions/runs/46055135980`)**: 9/9 jobs green (`ubuntu-24.04` & `windows-2022` Python 3.11–3.14 + `Combined Coverage Gate`), 0 annotations; combined `mcpsec_core` coverage: **97.19% statements** (1865/1919), **95.24% branches** (741/778), all modules `>= 90.38%`.
 - **C6 vs C7 Equivalence (post-ADR-021, dev set, n=83 scenarios x 2 modes = 166 pairs)**: `166/166` (100.00%) match on `(status, blocking_layer, rule_id)` and `0/166` secondary diffs (`docs/evidence/5.18e/equivalence_c6_vs_c7.md`). C7 (`benchmark/results/dev_analysis_20261127_c7.md`, dev scenarios exercise `4` of `46` official tools): Hard-Block `0/50`, Attended `50/50` (`100.0%`), Unattended `32/50` (`64.0%`), `deny_all` In-Scope ASR `0/21` (`0.0%`), `approve_all` In-Scope ASR `9/21` (`42.9%`), Approvals/Task `0.40 (20/50)` (v1 `0.28`, v2 `0.75`, v3 `0.50`, v4 `0.25`).
 - **Baseline Matrix C0–C6 (dev set, n=50 benign, n=32 valid attacks)**:
   - Hard-Block (`deny_all`): C0 0.00%, C1 0.00%, C2 20.00%, C5 0.00%, C6 0.00%.
